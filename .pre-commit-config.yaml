@@ -1,0 +1,100 @@
+---
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
+      - id: end-of-file-fixer
+      - id: check-yaml
+        args: [--allow-multiple-documents]
+        exclude: '^chart/.*/templates/.*\.yaml$'
+      - id: check-json
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-case-conflict
+      - id: check-added-large-files
+        args: [--maxkb=1024]
+      - id: forbid-new-submodules
+      - id: detect-private-key
+      - id: mixed-line-ending
+        args: [--fix=lf]
+
+  - repo: https://github.com/dnephin/pre-commit-golang
+    rev: v0.5.1
+    hooks:
+      - id: go-fmt
+      - id: go-imports
+      - id: go-cyclo
+        args: [-over=15]
+      - id: go-mod-tidy
+      - id: go-unit-tests
+      - id: golangci-lint
+
+  - repo: https://github.com/Lucas-C/pre-commit-hooks
+    rev: v1.5.5
+    hooks:
+      - id: remove-tabs
+        exclude: '(Makefile|\.mk|\.go|go\.mod)$'
+
+  - repo: https://github.com/adrienverge/yamllint
+    rev: v1.37.1
+    hooks:
+      - id: yamllint
+        args: [-c=.yamllint.yaml]
+
+  - repo: https://github.com/hadolint/hadolint
+    rev: v2.13.1-beta
+    hooks:
+      - id: hadolint-docker
+        args: [--ignore=DL3008, --ignore=DL3009]
+
+  - repo: https://github.com/gruntwork-io/pre-commit
+    rev: v0.1.30
+    hooks:
+      - id: shellcheck
+
+  - repo: local
+    hooks:
+      - id: go-build
+        name: go-build
+        entry: make build-plugin
+        language: system
+        files: \.go$
+        pass_filenames: false
+
+      - id: go-test-coverage
+        name: go-test-coverage
+        entry: make test-unit
+        language: system
+        files: \.go$
+        pass_filenames: false
+
+      - id: go-security-scan
+        name: go-security-scan
+        entry: make security-scan
+        language: system
+        files: \.go$
+        pass_filenames: false
+        stages: [pre-commit]
+
+      - id: validate-dockerfiles
+        name: validate-dockerfiles
+        entry: hadolint
+        language: system
+        files: Dockerfile.*$
+        args: [--ignore=DL3008, --ignore=DL3009]
+
+      - id: prevent-plugin-files
+        name: prevent-plugin-files
+        entry: 'Plugin files should not be committed (use .gitignore)'
+        language: fail
+        files: '\.so$'
+
+      - id: prevent-binary-files
+        name: prevent-binary-files
+        entry: 'Binary files should not be committed'
+        language: fail
+        files: '\.(exe|dll|dylib)$'
+
+fail_fast: false
