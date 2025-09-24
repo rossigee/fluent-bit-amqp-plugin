@@ -46,6 +46,11 @@ jobs:
       - name: Install dependencies
         run: make deps
 
+      - name: Install golangci-lint v2.5.0
+        run: |
+          curl -sSfL https://github.com/golangci/golangci-lint/releases/download/v2.5.0/golangci-lint-2.5.0-linux-amd64.tar.gz | \
+          sudo tar -xz -C /usr/local/bin --strip-components=1 golangci-lint-2.5.0-linux-amd64/golangci-lint
+
       - name: Format check
         run: |
           make fmt
@@ -55,10 +60,7 @@ jobs:
         run: make vet
 
       - name: Lint
-        uses: golangci/golangci-lint-action@v6
-        with:
-          version: latest
-          args: --timeout 5m
+        run: make lint
 
       - name: Unit tests
         run: make test-unit
