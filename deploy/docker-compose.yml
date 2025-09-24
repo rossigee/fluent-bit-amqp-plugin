@@ -1,0 +1,94 @@
+---
+version: '3.8'
+
+services:
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: rabbitmq-dev
+    hostname: rabbitmq
+    restart: unless-stopped
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: fluent
+      RABBITMQ_DEFAULT_PASS: password
+      RABBITMQ_DEFAULT_VHOST: logs
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+      - ./rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - fluent-net
+
+  fluent-bit:
+    build:
+      context: ..
+      dockerfile: build/Dockerfile
+    container_name: fluent-bit-dev
+    restart: unless-stopped
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      - CLUSTER_NAME=development
+      - NODE_NAME=dev-node
+      - RABBITMQ_URL=amqp://fluent:password@rabbitmq:5672/logs
+      - RABBITMQ_EXCHANGE=logs
+    volumes:
+      - ./fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf:ro
+      - ./test-logs:/var/log/test:ro
+      - /var/log:/var/log:ro
+    ports:
+      - "2020:2020"
+    networks:
+      - fluent-net
+
+  log-generator:
+    image: alpine:latest
+    container_name: log-generator-dev
+    restart: unless-stopped
+    command: >
+      sh -c "
+        apk add --no-cache jq curl;
+        mkdir -p /var/log/test;
+        while true; do
+          timestamp=$$(date -Iseconds);
+          level=$$(shuf -n1 -e info warn error debug);
+          service=$$(shuf -n1 -e web-api user-service payment-gateway notification-service);
+          message=\"Sample log message from $$service at $$timestamp\";
+          echo \"{\\\"timestamp\\\": \\\"$$timestamp\\\", \\\"level\\\": \\\"$$level\\\", \\\"message\\\": \\\"$$message\\\", \\\"service\\\": \\\"$$service\\\", \\\"request_id\\\": \\\"req-$$(date +%s)-$$(shuf -i 1000-9999 -n 1)\\\"}\" >> /var/log/test/app.log;
+          sleep $$(shuf -i 2-10 -n 1);
+        done
+      "
+    volumes:
+      - ./test-logs:/var/log/test
+    networks:
+      - fluent-net
+
+  consumer:
+    build:
+      context: ../test
+      dockerfile: Dockerfile.consumer
+    container_name: consumer-dev
+    restart: unless-stopped
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      - RABBITMQ_URL=amqp://fluent:password@rabbitmq:5672/logs
+      - QUEUE_NAME=kubernetes-logs-development
+    networks:
+      - fluent-net
+
+volumes:
+  rabbitmq_data:
+
+networks:
+  fluent-net:
+    driver: bridge
