@@ -66,10 +66,11 @@ spec:
 
 ## 📦 Installation
 
-### Container Images
+### Container Image
 
 - **Init Container**: `ghcr.io/rossigee/fluent-bit-amqp-plugin-init:latest`
-- **Full Image**: `ghcr.io/rossigee/fluent-bit-amqp-plugin:latest`
+  - Minimal Alpine image containing only the plugin `.so` file
+  - Use with official Fluent Bit images in Kubernetes init container pattern
 
 ### Manual Installation
 

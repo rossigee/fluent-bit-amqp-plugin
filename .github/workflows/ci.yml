@@ -116,29 +116,11 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-init
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-init
           tags: |
             type=ref,event=branch
             type=ref,event=pr
             type=sha,prefix={{branch}}-
-
-      - name: Build and push main image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: ./build/Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          build-args: |
-            VERSION=${{ github.ref_name != 'refs/heads/master' && github.ref_name || 'dev' }}
-            COMMIT=${{ github.sha }}
-            DATE=${{ github.event.head_commit.timestamp }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
 
       - name: Build and push init container
         uses: docker/build-push-action@v6
@@ -147,7 +129,7 @@ jobs:
           file: ./build/init-container/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-init:${{ github.ref_name != 'refs/heads/master' && github.ref_name || 'master' }}
+          tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
