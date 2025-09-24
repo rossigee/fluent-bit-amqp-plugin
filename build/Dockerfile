@@ -32,15 +32,9 @@ FROM fluent/fluent-bit:3.2
 # Switch to root to install plugin
 USER root
 
-# Install plugin
+# Install plugin and configuration
 COPY --from=builder /build/out_amqp_cloudevents.so /fluent-bit/bin/
-
-# Create plugins configuration
-RUN echo "[PLUGINS]" > /fluent-bit/etc/plugins.conf && \
-    echo "    Path /fluent-bit/bin/out_amqp_cloudevents.so" >> /fluent-bit/etc/plugins.conf
-
-# Ensure proper permissions
-RUN chmod 755 /fluent-bit/bin/out_amqp_cloudevents.so
+COPY build/plugins.conf /fluent-bit/etc/plugins.conf
 
 # Switch back to fluent-bit user
 USER fluent-bit
