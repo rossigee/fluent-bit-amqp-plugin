@@ -49,7 +49,7 @@ jobs:
 
       - name: Install gosec
         run: |
-          curl -sSfL https://github.com/securecodewarrior/gosec/releases/download/v2.21.4/gosec_2.21.4_linux_amd64.tar.gz | \
+          curl -sSfL https://github.com/securego/gosec/releases/download/v2.22.9/gosec_2.22.9_linux_amd64.tar.gz | \
           sudo tar -xz -C /usr/local/bin gosec
 
       - name: Validate code
