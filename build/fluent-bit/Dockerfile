@@ -1,5 +1,5 @@
 # Custom Fluent Bit image with AMQP CloudEvents plugin
-FROM ghcr.io/fluent/fluent-operator/fluent-bit:4.0.1
+FROM fluent/fluent-bit:4.1.0
 
 # Build argument for target architecture
 ARG TARGETARCH
