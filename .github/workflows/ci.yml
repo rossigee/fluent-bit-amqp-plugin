@@ -104,6 +104,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
+      - name: Setup Go
+        run: |
+          wget -q https://go.dev/dl/go${{ env.GO_VERSION }}.linux-amd64.tar.gz
+          sudo rm -rf /usr/local/go
+          sudo tar -C /usr/local -xzf go${{ env.GO_VERSION }}.linux-amd64.tar.gz
+          echo "/usr/local/go/bin" >> $GITHUB_PATH
+
+      - name: Install dependencies
+        run: make deps
+
+      - name: Build plugin
+        run: make build-plugin
+
       - name: Setup Docker Buildx
         uses: docker/setup-buildx-action@v3
 
