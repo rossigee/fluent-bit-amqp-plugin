@@ -93,6 +93,9 @@ jobs:
       - name: Determine available platforms
         id: platforms
         run: |
+          echo "Checking for built plugin files..."
+          ls -la out_amqp_cloudevents*.so || echo "No plugin files found"
+
           PLATFORMS="linux/amd64"
           if [[ -f out_amqp_cloudevents-linux-arm64.so ]]; then
             PLATFORMS="${PLATFORMS},linux/arm64"
@@ -101,6 +104,14 @@ jobs:
             echo "ARM64 plugin not found, building AMD64 only"
           fi
           echo "platforms=${PLATFORMS}" >> $GITHUB_OUTPUT
+          echo "Selected platforms: ${PLATFORMS}"
+
+      - name: Verify plugin files before Docker build
+        run: |
+          echo "Final check of plugin files before Docker build:"
+          ls -la out_amqp_cloudevents*.so || echo "ERROR: No plugin files found!"
+          echo "Build context contents:"
+          find . -name "*.so" -type f || echo "No .so files found in context"
 
       - name: Build and push custom Fluent Bit image
         uses: docker/build-push-action@v6
