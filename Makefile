@@ -112,7 +112,7 @@ build-plugin: deps fmt vet
 ## build-plugin-linux-amd64: Build plugin for Linux AMD64
 build-plugin-linux-amd64:
 	@$(MAKE) build-plugin GOOS=linux GOARCH=amd64
-	@mv $(PLUGIN_NAME).so $(PLUGIN_NAME)-linux-amd64.so
+	@cp $(PLUGIN_NAME).so $(PLUGIN_NAME)-linux-amd64.so
 
 ## build-plugin-linux-arm64: Build plugin for Linux ARM64
 build-plugin-linux-arm64:
@@ -123,7 +123,7 @@ build-plugin-linux-arm64:
 build-plugin-linux-arm64-optional:
 	@echo "Attempting ARM64 build..."
 	@if $(MAKE) build-plugin GOOS=linux GOARCH=arm64 2>/dev/null; then \
-		mv $(PLUGIN_NAME).so $(PLUGIN_NAME)-linux-arm64.so; \
+		cp $(PLUGIN_NAME).so $(PLUGIN_NAME)-linux-arm64.so; \
 		echo "ARM64 build successful"; \
 	else \
 		echo "ARM64 build failed (fluent-bit-go constraints) - skipping"; \

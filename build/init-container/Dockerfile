@@ -3,11 +3,14 @@
 
 FROM alpine:3.19
 
+# Build argument for target architecture
+ARG TARGETARCH
+
 # Install minimal required tools
 RUN apk add --no-cache coreutils
 
-# Copy the plugin file and entrypoint script
-COPY out_amqp_cloudevents.so /usr/lib/fluent-bit/out_amqp_cloudevents.so
+# Copy the architecture-specific plugin file and entrypoint script
+COPY out_amqp_cloudevents-linux-${TARGETARCH}.so /usr/lib/fluent-bit/out_amqp_cloudevents.so
 COPY build/init-container/entrypoint.sh /entrypoint.sh
 
 # Set up environment
