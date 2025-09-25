@@ -6,7 +6,7 @@ require (
 	github.com/cloudevents/sdk-go/v2 v2.16.2
 	github.com/fluent/fluent-bit-go v0.0.0-20230731091245-a7a013e2473c
 	github.com/google/uuid v1.6.0
-	github.com/streadway/amqp v1.1.0
+	github.com/rabbitmq/amqp091-go v1.10.0
 )
 
 require (
