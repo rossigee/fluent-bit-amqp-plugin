@@ -4,4 +4,4 @@ metadata:
   name: fluent-bit
   namespace: fluent-operator
 spec:
-  image: ghcr.io/rossigee/fluent-bit-amqp-plugin-fluent-bit:0.1.5 # {"$imagepolicy": "fluent-operator:fluent-bit-amqp-plugin-fluent-bit"}
+  image: ghcr.io/rossigee/fluent-bit-amqp-plugin:0.1.5 # {"$imagepolicy": "fluent-operator:fluent-bit-amqp-plugin"}
