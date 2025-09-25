@@ -1,0 +1,20 @@
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImagePolicy
+metadata:
+  name: fluent-bit-amqp-plugin-fluent-bit
+  namespace: fluent-operator
+spec:
+  imageRepositoryRef:
+    name: fluent-bit-amqp-plugin-fluent-bit
+  policy:
+    semver:
+      range: ">=0.1.0"
+---
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImageRepository
+metadata:
+  name: fluent-bit-amqp-plugin-fluent-bit
+  namespace: fluent-operator
+spec:
+  image: ghcr.io/rossigee/fluent-bit-amqp-plugin-fluent-bit
+  interval: 1m0s
