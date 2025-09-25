@@ -6,8 +6,8 @@ import (
 	"log"
 
 	cloudevents "github.com/cloudevents/sdk-go/v2"
+	amqp "github.com/rabbitmq/amqp091-go"
 	"github.com/rossigee/fluent-bit-amqp-plugin/pkg/config"
-	"github.com/streadway/amqp"
 )
 
 // Publisher handles AMQP message publishing
