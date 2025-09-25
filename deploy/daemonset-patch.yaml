@@ -1,0 +1,62 @@
+spec:
+  template:
+    spec:
+      initContainers:
+      - name: plugin-loader
+        image: ghcr.io/rossigee/fluent-bit-amqp-plugin-init:0.1.5
+        volumeMounts:
+        - name: plugins
+          mountPath: /usr/lib/fluent-bit
+        securityContext:
+          runAsUser: 1001
+          runAsGroup: 1001
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+      containers:
+      - name: fluent-bit
+        volumeMounts:
+        - mountPath: /fluent-bit/config
+          name: config
+          readOnly: true
+        - mountPath: /containers
+          mountPropagation: None
+          name: varlibcontainers
+          readOnly: true
+        - mountPath: /var/log/
+          mountPropagation: None
+          name: varlogs
+          readOnly: true
+        - mountPath: /var/log/journal
+          mountPropagation: None
+          name: systemd
+          readOnly: true
+        - mountPath: /fluent-bit/tail
+          name: positions
+        - mountPath: /usr/lib/fluent-bit
+          name: plugins
+      volumes:
+      - name: config
+        secret:
+          defaultMode: 420
+          secretName: fluent-bit-config
+      - hostPath:
+          path: /containers
+          type: ""
+        name: varlibcontainers
+      - hostPath:
+          path: /var/log
+          type: ""
+        name: varlogs
+      - hostPath:
+          path: /var/log/journal
+          type: ""
+        name: systemd
+      - hostPath:
+          path: /var/lib/fluent-bit/
+          type: ""
+        name: positions
+      - name: plugins
+        emptyDir: {}
