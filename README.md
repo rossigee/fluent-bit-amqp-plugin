@@ -12,13 +12,13 @@ A production-ready Fluent Bit output plugin that sends log events to AMQP queues
 - **CloudEvents v1.0 Compliance**: All events formatted according to CloudEvents specification
 - **AMQP 0.9.1 Support**: Direct publishing to RabbitMQ/AMQP brokers
 - **Automatic Reconnection**: Handles connection failures gracefully with retry logic
-- **Kubernetes Ready**: Init container pattern for seamless plugin deployment
+- **Kubernetes Ready**: Custom container image with plugin pre-installed
 - **Multi-Architecture**: AMD64 and ARM64 container images available
 - **Production Hardened**: Comprehensive testing, security scanning, and monitoring
 
 ## 🚀 Quick Start
 
-### Using Init Container (Recommended for Kubernetes)
+### Using Custom Image (Recommended for Kubernetes)
 
 ```yaml
 apiVersion: apps/v1
@@ -28,25 +28,14 @@ metadata:
 spec:
   template:
     spec:
-      initContainers:
-      - name: plugin-installer
-        image: ghcr.io/rossigee/fluent-bit-amqp-plugin-init:latest
-        volumeMounts:
-        - name: plugins
-          mountPath: /plugins
-
       containers:
       - name: fluent-bit
-        image: fluent/fluent-bit:3.2
+        image: ghcr.io/rossigee/fluent-bit-amqp-plugin:latest
         volumeMounts:
-        - name: plugins
-          mountPath: /fluent-bit/plugins
         - name: config
           mountPath: /fluent-bit/etc
 
       volumes:
-      - name: plugins
-        emptyDir: {}
       - name: config
         configMap:
           name: fluent-bit-config
@@ -68,9 +57,9 @@ spec:
 
 ### Container Image
 
-- **Init Container**: `ghcr.io/rossigee/fluent-bit-amqp-plugin-init:latest`
-  - Minimal Alpine image containing only the plugin `.so` file
-  - Use with official Fluent Bit images in Kubernetes init container pattern
+- **Custom Image**: `ghcr.io/rossigee/fluent-bit-amqp-plugin:latest`
+  - Fluent Bit with the AMQP CloudEvents plugin pre-installed
+  - Drop-in replacement for official Fluent Bit images
 
 ### Manual Installation
 
