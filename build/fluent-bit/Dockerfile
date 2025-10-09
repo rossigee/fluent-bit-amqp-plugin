@@ -8,7 +8,7 @@ ARG TARGETARCH
 COPY --chmod=755 out_amqp_cloudevents-linux-${TARGETARCH}.so /fluent-bit/plugins/out_amqp_cloudevents.so
 
 # Copy plugins configuration file
-COPY plugins.conf /fluent-bit/plugins/plugins.conf
+COPY build/fluent-bit/plugins.conf /fluent-bit/plugins/plugins.conf
 
 # Labels for better image management
 LABEL org.opencontainers.image.title="Fluent Bit with AMQP CloudEvents Plugin"

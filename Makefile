@@ -148,9 +148,9 @@ build-init-container:
 	@echo "Init container built: $(REGISTRY)/$(INIT_IMAGE_NAME):$(VERSION)"
 
 ## docker-build: Build Docker images
-docker-build: build-plugin
+docker-build: build-all
 	@echo "Building Docker images..."
-	docker build -f build/Dockerfile -t $(REGISTRY)/$(IMAGE_NAME):$(VERSION) .
+	docker build -f build/fluent-bit/Dockerfile -t $(REGISTRY)/$(IMAGE_NAME):$(VERSION) .
 	docker tag $(REGISTRY)/$(IMAGE_NAME):$(VERSION) $(REGISTRY)/$(IMAGE_NAME):latest
 	@$(MAKE) build-init-container
 
