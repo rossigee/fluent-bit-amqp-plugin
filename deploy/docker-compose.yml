@@ -29,7 +29,7 @@ services:
   fluent-bit:
     build:
       context: ..
-      dockerfile: build/Dockerfile
+      dockerfile: build/fluent-bit/Dockerfile
     container_name: fluent-bit-dev
     restart: unless-stopped
     depends_on:
