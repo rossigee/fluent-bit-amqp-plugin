@@ -1,6 +1,6 @@
 module github.com/rossigee/fluent-bit-amqp-plugin
 
-go 1.25.1
+go 1.25.2
 
 require (
 	github.com/cloudevents/sdk-go/v2 v2.16.2
