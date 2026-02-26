@@ -7,7 +7,7 @@ name: Release
       - 'v*'
 
 env:
-  GO_VERSION: '1.25.2'
+  GO_VERSION: '1.26.0'
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
@@ -42,10 +42,10 @@ jobs:
       - name: Install dependencies
         run: make deps
 
-      - name: Install golangci-lint v2.5.0
+      - name: Install golangci-lint v2.9.0
         run: |
-          curl -sSfL https://github.com/golangci/golangci-lint/releases/download/v2.5.0/golangci-lint-2.5.0-linux-amd64.tar.gz | \
-          sudo tar -xz -C /usr/local/bin --strip-components=1 golangci-lint-2.5.0-linux-amd64/golangci-lint
+          curl -sSfL https://github.com/golangci/golangci-lint/releases/download/v2.9.0/golangci-lint-2.9.0-linux-amd64.tar.gz | \
+          sudo tar -xz -C /usr/local/bin --strip-components=1 golangci-lint-2.9.0-linux-amd64/golangci-lint
 
       - name: Install gosec
         run: |
