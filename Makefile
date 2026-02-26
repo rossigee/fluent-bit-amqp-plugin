@@ -6,7 +6,7 @@ VERSION ?= $(shell cat VERSION)
 COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 
-GO_VERSION = 1.25.1
+GO_VERSION = 1.26.0
 CGO_ENABLED = 1
 GOOS ?= linux
 GOARCH ?= amd64
