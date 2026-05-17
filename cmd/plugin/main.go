@@ -124,14 +124,9 @@ func FLBPluginExit() int {
 	return output.FLB_OK
 }
 
-func main() {
-	// This function is required but not called when used as a plugin
-	log.Printf("Fluent Bit AMQP CloudEvents output plugin v%s", getVersion())
-	os.Exit(0)
-}
+var version = "dev"
 
-// getVersion returns the plugin version
-func getVersion() string {
-	// This would be set during build time
-	return "0.1.0"
+func main() {
+	log.Printf("Fluent Bit AMQP CloudEvents output plugin v%s", version)
+	os.Exit(0)
 }
