@@ -66,4 +66,7 @@ func (c *AMQPConfig) LoadFromFluentBit(plugin unsafe.Pointer) {
 	if exclusive := output.FLBPluginConfigKey(plugin, "exclusive"); exclusive != "" {
 		c.Exclusive, _ = strconv.ParseBool(exclusive)
 	}
+	if noWait := output.FLBPluginConfigKey(plugin, "no_wait"); noWait != "" {
+		c.NoWait, _ = strconv.ParseBool(noWait)
+	}
 }

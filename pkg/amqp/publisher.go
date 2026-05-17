@@ -1,7 +1,9 @@
 package amqp
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 
@@ -72,20 +74,34 @@ func (p *Publisher) connect() error {
 	return nil
 }
 
-// PublishCloudEvent publishes a CloudEvent to the AMQP broker
+// PublishCloudEvent publishes a CloudEvent to the AMQP broker, reconnecting once on a closed connection.
 func (p *Publisher) PublishCloudEvent(event *cloudevents.Event) error {
-	// Marshal CloudEvent to JSON
+	err := p.publishOnce(event)
+	if err == nil {
+		return nil
+	}
+	if !errors.Is(err, amqp.ErrClosed) {
+		return err
+	}
+	if reconnectErr := p.reconnect(); reconnectErr != nil {
+		return fmt.Errorf("failed to reconnect: %w", reconnectErr)
+	}
+	return p.publishOnce(event)
+}
+
+// publishOnce attempts a single publish of a CloudEvent without any retry logic.
+func (p *Publisher) publishOnce(event *cloudevents.Event) error {
 	eventBytes, err := json.Marshal(event)
 	if err != nil {
 		return fmt.Errorf("failed to marshal CloudEvent: %w", err)
 	}
 
-	// Publish to AMQP
-	err = p.channel.Publish(
-		p.config.Exchange,   // exchange
-		p.config.RoutingKey, // routing key
-		false,               // mandatory
-		false,               // immediate
+	err = p.channel.PublishWithContext(
+		context.Background(),
+		p.config.Exchange,
+		p.config.RoutingKey,
+		false,
+		false,
 		amqp.Publishing{
 			ContentType: "application/json",
 			Body:        eventBytes,
@@ -95,20 +111,11 @@ func (p *Publisher) PublishCloudEvent(event *cloudevents.Event) error {
 				"ce-source":      event.Source(),
 				"ce-id":          event.ID(),
 			},
-		})
-
+		},
+	)
 	if err != nil {
-		// Try to reconnect if connection was lost
-		if err == amqp.ErrClosed {
-			if reconnectErr := p.reconnect(); reconnectErr != nil {
-				return fmt.Errorf("failed to reconnect: %w", reconnectErr)
-			}
-			// Retry publishing
-			return p.PublishCloudEvent(event)
-		}
 		return fmt.Errorf("failed to publish to AMQP: %w", err)
 	}
-
 	return nil
 }
 
