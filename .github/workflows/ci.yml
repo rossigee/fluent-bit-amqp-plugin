@@ -115,7 +115,7 @@ jobs:
         run: make deps
 
       - name: Build plugin
-        run: make build-plugin
+        run: make build-all
 
       - name: Setup Docker Buildx
         uses: docker/setup-buildx-action@v3
