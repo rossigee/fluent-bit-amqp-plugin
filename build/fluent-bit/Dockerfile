@@ -1,11 +1,8 @@
 # Custom Fluent Bit image with AMQP CloudEvents plugin
 FROM fluent/fluent-bit:4.1.0
 
-# Build argument for target architecture
-ARG TARGETARCH
-
-# Copy the architecture-specific plugin file with correct permissions
-COPY --chmod=755 out_amqp_cloudevents-linux-${TARGETARCH}.so /fluent-bit/plugins/out_amqp_cloudevents.so
+# Copy the plugin file with correct permissions
+COPY --chmod=755 out_amqp_cloudevents.so /fluent-bit/plugins/out_amqp_cloudevents.so
 
 # Copy plugins configuration file
 COPY build/fluent-bit/plugins.conf /fluent-bit/plugins/plugins.conf
