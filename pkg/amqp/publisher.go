@@ -22,11 +22,6 @@ type Publisher struct {
 // NewPublisher creates a new AMQP publisher with the given configuration
 func NewPublisher(cfg *config.AMQPConfig) (*Publisher, error) {
 	p := &Publisher{config: cfg}
-
-	if err := p.connect(); err != nil {
-		return nil, fmt.Errorf("failed to initialize AMQP connection: %w", err)
-	}
-
 	return p, nil
 }
 
@@ -76,6 +71,10 @@ func (p *Publisher) connect() error {
 
 // PublishCloudEvent publishes a CloudEvent to the AMQP broker, reconnecting once on a closed connection.
 func (p *Publisher) PublishCloudEvent(event *cloudevents.Event) error {
+	if err := p.ensureConnection(); err != nil {
+		return err
+	}
+
 	err := p.publishOnce(event)
 	if err == nil {
 		return nil
@@ -87,6 +86,14 @@ func (p *Publisher) PublishCloudEvent(event *cloudevents.Event) error {
 		return fmt.Errorf("failed to reconnect: %w", reconnectErr)
 	}
 	return p.publishOnce(event)
+}
+
+// ensureConnection connects if not already connected
+func (p *Publisher) ensureConnection() error {
+	if p.connection != nil && !p.connection.IsClosed() {
+		return nil
+	}
+	return p.connect()
 }
 
 // publishOnce attempts a single publish of a CloudEvent without any retry logic.
@@ -154,6 +161,8 @@ func (p *Publisher) Close() error {
 			return fmt.Errorf("failed to close AMQP connection: %w", err)
 		}
 	}
+	p.channel = nil
+	p.connection = nil
 	log.Printf("AMQP connection closed")
 	return nil
 }
