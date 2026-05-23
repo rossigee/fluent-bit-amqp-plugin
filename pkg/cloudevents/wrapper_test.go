@@ -121,3 +121,26 @@ func TestWrapRecord_DataSerializable(t *testing.T) {
 		t.Errorf("event not JSON-serializable: %v", err)
 	}
 }
+
+func TestWrapRecord_MapWithInterfaceKey(t *testing.T) {
+	w := newTestWrapper()
+	ts := time.Now()
+	record := map[interface{}]interface{}{
+		"message": "hello",
+		"level":   "info",
+		"nested": map[interface{}]interface{}{
+			"key": "value",
+		},
+	}
+
+	event, err := w.WrapRecord(ts, record, "")
+	if err != nil {
+		t.Fatalf("expected no error with map[interface{}]interface{}, got: %v", err)
+	}
+
+	// Verify the event can be marshaled to JSON
+	_, err = json.Marshal(event)
+	if err != nil {
+		t.Errorf("event not JSON-serializable: %v", err)
+	}
+}
