@@ -13,6 +13,7 @@ type AMQPConfig struct {
 	Exchange    string
 	RoutingKey  string
 	Queue       string
+	CloudEvents bool
 	EventSource string
 	EventType   string
 	Durable     bool
@@ -28,6 +29,7 @@ func DefaultConfig() *AMQPConfig {
 		Exchange:    "",
 		RoutingKey:  "fluent-bit-events",
 		Queue:       "fluent-bit-events",
+		CloudEvents: true,
 		EventSource: "fluent-bit",
 		EventType:   "fluent-bit.log",
 		Durable:     true,
@@ -50,6 +52,9 @@ func (c *AMQPConfig) LoadFromFluentBit(plugin unsafe.Pointer) {
 	}
 	if queue := output.FLBPluginConfigKey(plugin, "queue"); queue != "" {
 		c.Queue = queue
+	}
+	if cloudEvents := output.FLBPluginConfigKey(plugin, "cloudevents"); cloudEvents != "" {
+		c.CloudEvents, _ = strconv.ParseBool(cloudEvents)
 	}
 	if eventSource := output.FLBPluginConfigKey(plugin, "event_source"); eventSource != "" {
 		c.EventSource = eventSource

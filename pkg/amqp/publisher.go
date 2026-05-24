@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"time"
 
 	cloudevents "github.com/cloudevents/sdk-go/v2"
 	amqp "github.com/rabbitmq/amqp091-go"
@@ -146,6 +147,88 @@ func (p *Publisher) reconnect() error {
 	}
 
 	log.Printf("Successfully reconnected to AMQP")
+	return nil
+}
+
+// normalizeRecord converts map[interface{}]interface{} to map[string]interface{}
+// recursively, which is required for JSON marshaling support.
+func normalizeRecord(v interface{}) interface{} {
+	switch v := v.(type) {
+	case map[interface{}]interface{}:
+		result := make(map[string]interface{}, len(v))
+		for key, value := range v {
+			strKey := fmt.Sprintf("%v", key)
+			result[strKey] = normalizeRecord(value)
+		}
+		return result
+	case []interface{}:
+		result := make([]interface{}, len(v))
+		for i, item := range v {
+			result[i] = normalizeRecord(item)
+		}
+		return result
+	default:
+		return v
+	}
+}
+
+// PublishRecord publishes a raw Fluent Bit record to the AMQP broker as plain
+// JSON, reconnecting once on a closed connection. The message body is a JSON
+// object containing the record fields plus "@timestamp" and "tag" keys.
+func (p *Publisher) PublishRecord(timestamp time.Time, record interface{}, tag string) error {
+	if err := p.ensureConnection(); err != nil {
+		return err
+	}
+
+	err := p.publishRecordOnce(timestamp, record, tag)
+	if err == nil {
+		return nil
+	}
+	if !errors.Is(err, amqp.ErrClosed) {
+		return err
+	}
+	if reconnectErr := p.reconnect(); reconnectErr != nil {
+		return fmt.Errorf("failed to reconnect: %w", reconnectErr)
+	}
+	return p.publishRecordOnce(timestamp, record, tag)
+}
+
+// publishRecordOnce marshals and publishes a single record without retry logic.
+func (p *Publisher) publishRecordOnce(timestamp time.Time, record interface{}, tag string) error {
+	normalized, ok := normalizeRecord(record).(map[string]interface{})
+	if !ok {
+		normalized = map[string]interface{}{"data": normalizeRecord(record)}
+	}
+
+	// Merge metadata into a shallow copy so we don't mutate the original.
+	payload := make(map[string]interface{}, len(normalized)+2)
+	for k, v := range normalized {
+		payload[k] = v
+	}
+	payload["@timestamp"] = timestamp.UTC().Format(time.RFC3339)
+	if tag != "" {
+		payload["tag"] = tag
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("failed to marshal record: %w", err)
+	}
+
+	err = p.channel.PublishWithContext(
+		context.Background(),
+		p.config.Exchange,
+		p.config.RoutingKey,
+		false,
+		false,
+		amqp.Publishing{
+			ContentType: "application/json",
+			Body:        body,
+		},
+	)
+	if err != nil {
+		return fmt.Errorf("failed to publish to AMQP: %w", err)
+	}
 	return nil
 }
 

@@ -94,10 +94,10 @@ jobs:
         id: platforms
         run: |
           echo "Checking for built plugin files..."
-          ls -la out_amqp_cloudevents*.so || echo "No plugin files found"
+          ls -la out_amqp*.so || echo "No plugin files found"
 
           PLATFORMS="linux/amd64"
-          if [[ -f out_amqp_cloudevents-linux-arm64.so ]]; then
+          if [[ -f out_amqp-linux-arm64.so ]]; then
             PLATFORMS="${PLATFORMS},linux/arm64"
             echo "ARM64 plugin found, building multi-platform image"
           else
@@ -109,7 +109,7 @@ jobs:
       - name: Verify plugin files before Docker build
         run: |
           echo "Final check of plugin files before Docker build:"
-          ls -la out_amqp_cloudevents*.so || echo "ERROR: No plugin files found!"
+          ls -la out_amqp*.so || echo "ERROR: No plugin files found!"
           echo "Build context contents:"
           find . -name "*.so" -type f || echo "No .so files found in context"
 

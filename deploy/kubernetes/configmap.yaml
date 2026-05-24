@@ -63,7 +63,7 @@ data:
         Add                 node_name ${NODE_NAME}
 
     [OUTPUT]
-        Name                amqp_cloudevents
+        Name                amqp
         Match               kube.*
         url                 ${RABBITMQ_URL}
         exchange            ${RABBITMQ_EXCHANGE}
@@ -74,7 +74,7 @@ data:
         durable             true
 
     [OUTPUT]
-        Name                amqp_cloudevents
+        Name                amqp
         Match               host.*
         url                 ${RABBITMQ_URL}
         exchange            ${RABBITMQ_EXCHANGE}
@@ -113,4 +113,4 @@ data:
 
   plugins.conf: |
     [PLUGINS]
-        Path /fluent-bit/plugins/out_amqp_cloudevents.so
+        Path /fluent-bit/plugins/out_amqp.so

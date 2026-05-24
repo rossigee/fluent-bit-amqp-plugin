@@ -1,15 +1,15 @@
-# Fluent Bit AMQP CloudEvents Output Plugin
+# Fluent Bit AMQP Output Plugin
 
 [![CI](https://github.com/rossigee/fluent-bit-amqp-plugin/actions/workflows/ci.yml/badge.svg)](https://github.com/rossigee/fluent-bit-amqp-plugin/actions/workflows/ci.yml)
 [![Release](https://github.com/rossigee/fluent-bit-amqp-plugin/actions/workflows/release.yml/badge.svg)](https://github.com/rossigee/fluent-bit-amqp-plugin/actions/workflows/release.yml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/rossigee/fluent-bit-amqp-plugin)](https://goreportcard.com/report/github.com/rossigee/fluent-bit-amqp-plugin)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
-A production-ready Fluent Bit output plugin that sends log events to AMQP queues (RabbitMQ) wrapped as [CloudEvents](https://cloudevents.io/). Perfect for building event-driven architectures with standardized event formats.
+A production-ready Fluent Bit output plugin that sends log records to AMQP queues (RabbitMQ) as either plain JSON or [CloudEvents](https://cloudevents.io/), selectable per output block.
 
 ## ✨ Features
 
-- **CloudEvents v1.0 Compliance**: All events formatted according to CloudEvents specification
+- **Plain JSON or CloudEvents**: Choose the format that suits your consumers — defaults to CloudEvents
 - **AMQP 0.9.1 Support**: Direct publishing to RabbitMQ/AMQP brokers
 - **Automatic Reconnection**: Handles connection failures gracefully with retry logic
 - **Kubernetes Ready**: Custom container image with plugin pre-installed
@@ -44,13 +44,22 @@ spec:
 ### Configuration
 
 ```ini
+# CloudEvents format (default)
 [OUTPUT]
-    Name                amqp_cloudevents
+    Name                amqp
     Match               *
     url                 amqp://user:pass@rabbitmq:5672/
     routing_key         application-logs
     event_source        my-application
     event_type          application.log
+
+# Plain JSON format
+[OUTPUT]
+    Name                amqp
+    Match               alerts.*
+    url                 amqp://user:pass@rabbitmq:5672/
+    routing_key         application-alerts
+    cloudevents         false
 ```
 
 ## 📦 Installation
@@ -58,21 +67,21 @@ spec:
 ### Container Image
 
 - **Custom Image**: `ghcr.io/rossigee/fluent-bit-amqp-plugin:latest`
-  - Fluent Bit with the AMQP CloudEvents plugin pre-installed
+  - Fluent Bit with the AMQP plugin pre-installed
   - Drop-in replacement for official Fluent Bit images
 
 ### Manual Installation
 
 ```bash
 # Download latest release
-wget https://github.com/rossigee/fluent-bit-amqp-plugin/releases/latest/download/out_amqp_cloudevents-linux-amd64.so
+wget https://github.com/rossigee/fluent-bit-amqp-plugin/releases/latest/download/out_amqp-linux-amd64.so
 
 # Install to Fluent Bit plugins directory
 sudo mkdir -p /usr/local/lib/fluent-bit
-sudo cp out_amqp_cloudevents-linux-amd64.so /usr/local/lib/fluent-bit/
+sudo cp out_amqp-linux-amd64.so /usr/local/lib/fluent-bit/
 
 # Load plugin in Fluent Bit
-fluent-bit -e /usr/local/lib/fluent-bit/out_amqp_cloudevents-linux-amd64.so -c fluent-bit.conf
+fluent-bit -e /usr/local/lib/fluent-bit/out_amqp-linux-amd64.so -c fluent-bit.conf
 ```
 
 ### Building from Source
@@ -97,8 +106,9 @@ make docker-build
 | `exchange` | AMQP exchange name | `""` (default exchange) | No |
 | `routing_key` | Routing key for messages | `fluent-bit-events` | No |
 | `queue` | Queue name to declare/use | `fluent-bit-events` | No |
-| `event_source` | CloudEvent source field | `fluent-bit` | No |
-| `event_type` | CloudEvent type field | `fluent-bit.log` | No |
+| `cloudevents` | Wrap records as CloudEvents | `true` | No |
+| `event_source` | CloudEvent source field (CloudEvents only) | `fluent-bit` | No |
+| `event_type` | CloudEvent type field (CloudEvents only) | `fluent-bit.log` | No |
 | `durable` | Declare queue as durable | `true` | No |
 
 ### Advanced Configuration Example
@@ -117,8 +127,9 @@ make docker-build
     Match           kube.*
     Kube_URL        https://kubernetes.default.svc:443
 
+# Structured CloudEvents for event-driven consumers
 [OUTPUT]
-    Name                amqp_cloudevents
+    Name                amqp
     Match               app.*
     url                 amqp://logger:secret@rabbitmq.infra.svc.cluster.local:5672/logs
     exchange            application-events
@@ -127,11 +138,21 @@ make docker-build
     event_source        kubernetes.${CLUSTER_NAME}
     event_type          application.container.log
     durable             true
+
+# Plain JSON for alert pipelines or simple consumers
+[OUTPUT]
+    Name                amqp
+    Match               alerts.*
+    url                 amqp://logger:secret@rabbitmq.infra.svc.cluster.local:5672/logs
+    routing_key         ${HOSTNAME}.alerts
+    queue               alerts
+    cloudevents         false
+    durable             true
 ```
 
-## 📊 CloudEvent Format
+## 📊 Message Formats
 
-Events are published as CloudEvents with the following structure:
+### CloudEvents format (default, `cloudevents true`)
 
 ```json
 {
@@ -143,26 +164,28 @@ Events are published as CloudEvents with the following structure:
   "datacontenttype": "application/json",
   "fluentbittag": "app.container",
   "data": {
-    "timestamp": "2024-01-15T10:30:00Z",
     "level": "info",
     "message": "Application started successfully",
-    "service": "web-api",
-    "kubernetes": {
-      "namespace": "production",
-      "pod_name": "web-api-7d4b8c9f5-x2j8k"
-    }
+    "service": "web-api"
   }
 }
 ```
 
-### AMQP Headers
+AMQP headers include `ce-specversion`, `ce-type`, `ce-source`, and `ce-id`.
 
-CloudEvent metadata is also included as AMQP headers:
+### Plain JSON format (`cloudevents false`)
 
-- `ce-specversion`: CloudEvent specification version
-- `ce-type`: CloudEvent type
-- `ce-source`: CloudEvent source
-- `ce-id`: CloudEvent ID
+```json
+{
+  "@timestamp": "2024-01-15T10:30:00Z",
+  "tag": "app.container",
+  "level": "info",
+  "message": "Application started successfully",
+  "service": "web-api"
+}
+```
+
+Record fields are merged at the top level with `@timestamp` and `tag` alongside them.
 
 ## 🎯 Use Cases
 
@@ -170,7 +193,7 @@ CloudEvent metadata is also included as AMQP headers:
 
 ```ini
 [OUTPUT]
-    Name                amqp_cloudevents
+    Name                amqp
     Match               app.*
     url                 amqp://app:secret@rabbitmq:5672/
     routing_key         application.${SERVICE_NAME}
@@ -182,7 +205,7 @@ CloudEvent metadata is also included as AMQP headers:
 
 ```ini
 [OUTPUT]
-    Name                amqp_cloudevents
+    Name                amqp
     Match               security.*
     url                 amqp://security:secret@security-rabbitmq:5672/security
     exchange            security-events
@@ -191,17 +214,17 @@ CloudEvent metadata is also included as AMQP headers:
     event_type          security.audit
 ```
 
-### Multi-Tenant Logging
+### Alert Pipeline (plain JSON)
 
 ```ini
 [OUTPUT]
-    Name                amqp_cloudevents
-    Match               tenant.*
-    url                 amqp://tenant:secret@rabbitmq:5672/
-    routing_key         tenant.${TENANT_ID}.logs
-    queue               tenant-${TENANT_ID}-logs
-    event_source        tenant.${TENANT_ID}
-    event_type          tenant.application.log
+    Name                amqp
+    Match               alert.*
+    url                 amqp://alerts:secret@rabbitmq:5672/
+    routing_key         alerts
+    queue               alerts
+    cloudevents         false
+    durable             true
 ```
 
 ## 🔧 Development
@@ -217,9 +240,6 @@ CloudEvent metadata is also included as AMQP headers:
 ```bash
 # Setup development environment
 make setup-dev
-
-# Install pre-commit hooks
-pre-commit install
 
 # Start test environment
 make dev-test
@@ -244,21 +264,13 @@ make test-integration
 make test-coverage
 ```
 
-## 📚 Documentation
-
-- [Installation Guide](docs/installation.md)
-- [Configuration Reference](docs/configuration.md)
-- [Kubernetes Integration](docs/kubernetes.md)
-- [Development Guide](docs/development.md)
-- [Contributing Guidelines](CONTRIBUTING.md)
-
 ## 🐛 Troubleshooting
 
 ### Plugin Not Loading
 
 ```bash
 # Check plugin file permissions
-ls -la /fluent-bit/plugins/out_amqp_cloudevents.so
+ls -la /fluent-bit/plugins/out_amqp.so
 
 # Enable debug logging
 [SERVICE]
@@ -289,9 +301,7 @@ kubectl logs -n rabbitmq rabbitmq-0
 
 ## 🤝 Contributing
 
-We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for details.
-
-### Quick Contribute
+We welcome contributions!
 
 1. Fork the repository
 2. Create a feature branch: `git checkout -b feature/amazing-feature`

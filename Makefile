@@ -1,6 +1,6 @@
 # Fluent Bit AMQP CloudEvents Output Plugin Makefile
 
-PLUGIN_NAME = out_amqp_cloudevents
+PLUGIN_NAME = out_amqp
 MODULE = github.com/rossigee/fluent-bit-amqp-plugin
 VERSION ?= $(shell cat VERSION)
 COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")

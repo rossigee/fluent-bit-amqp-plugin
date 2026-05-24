@@ -16,6 +16,7 @@ func TestDefaultConfig(t *testing.T) {
 		{"Exchange", cfg.Exchange, ""},
 		{"RoutingKey", cfg.RoutingKey, "fluent-bit-events"},
 		{"Queue", cfg.Queue, "fluent-bit-events"},
+		{"CloudEvents", cfg.CloudEvents, true},
 		{"EventSource", cfg.EventSource, "fluent-bit"},
 		{"EventType", cfg.EventType, "fluent-bit.log"},
 		{"Durable", cfg.Durable, true},
