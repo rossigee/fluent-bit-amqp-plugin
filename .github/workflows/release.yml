@@ -136,6 +136,12 @@ jobs:
             echo "## Release ${{ github.ref_name }}" > CHANGELOG.md
             echo "Fluent Bit AMQP CloudEvents output plugin" >> CHANGELOG.md
           fi
+          echo "" >> CHANGELOG.md
+          echo "## Docker Image" >> CHANGELOG.md
+          echo "\`\`\`bash" >> CHANGELOG.md
+          echo "docker pull ghcr.io/${{ env.IMAGE_NAME }}:${{ github.ref_name }}" >> CHANGELOG.md
+          echo "docker pull ghcr.io/${{ env.IMAGE_NAME }}:latest" >> CHANGELOG.md
+          echo "\`\`\`" >> CHANGELOG.md
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
