@@ -1,5 +1,5 @@
 # Custom Fluent Bit image with AMQP output plugin
-FROM fluent/fluent-bit:4.1.0
+FROM fluent/fluent-bit:5.0.6
 
 # Copy the plugin file with correct permissions
 COPY --chmod=755 out_amqp.so /fluent-bit/plugins/out_amqp.so
