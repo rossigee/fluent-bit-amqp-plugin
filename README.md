@@ -110,6 +110,11 @@ make docker-build
 | `event_source` | CloudEvent source field (CloudEvents only) | `fluent-bit` | No |
 | `event_type` | CloudEvent type field (CloudEvents only) | `fluent-bit.log` | No |
 | `durable` | Declare queue as durable | `true` | No |
+| `tls` | Enable TLS/AMQPS | `false` | No |
+| `tls_insecure_skip_verify` | Skip TLS certificate verification | `false` | No |
+| `tls_ca_file` | Path to CA certificate file | `""` | No |
+| `tls_cert_file` | Path to client certificate file | `""` | No |
+| `tls_key_file` | Path to client key file | `""` | No |
 
 ### Advanced Configuration Example
 
@@ -148,6 +153,30 @@ make docker-build
     queue               alerts
     cloudevents         false
     durable             true
+```
+
+### TLS/AMQPS Configuration
+
+```ini
+# AMQPS with custom certificates
+[OUTPUT]
+    Name                amqp
+    Match               secure.*
+    url                 amqps://logger:secret@rabbitmq.secure.svc.cluster.local:5671/
+    routing_key         secure-events
+    tls                 true
+    tls_ca_file         /etc/fluent-bit/certs/ca.pem
+    tls_cert_file       /etc/fluent-bit/certs/client.pem
+    tls_key_file        /etc/fluent-bit/certs/client.key
+
+# AMQPS with insecure verification (testing only)
+[OUTPUT]
+    Name                amqp
+    Match               dev.*
+    url                 amqps://logger:secret@rabbitmq-dev:5671/
+    routing_key         dev-events
+    tls                 true
+    tls_insecure_skip_verify true
 ```
 
 ## 📊 Message Formats

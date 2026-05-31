@@ -2,10 +2,15 @@ package amqp
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
+	"net/url"
+	"os"
+	"strings"
 	"time"
 
 	cloudevents "github.com/cloudevents/sdk-go/v2"
@@ -28,8 +33,26 @@ func NewPublisher(cfg *config.AMQPConfig) (*Publisher, error) {
 
 // connect establishes connection and channel to AMQP broker
 func (p *Publisher) connect() error {
-	// Connect to AMQP server
-	conn, err := amqp.Dial(p.config.URL)
+	var conn *amqp.Connection
+	var err error
+
+	urlStr, err := encodeURLPassword(p.config.URL)
+	if err != nil {
+		return fmt.Errorf("failed to encode URL: %w", err)
+	}
+
+	if p.config.TLS {
+		tlsConfig, err := p.buildTLSConfig()
+		if err != nil {
+			return fmt.Errorf("failed to build TLS config: %w", err)
+		}
+		conn, err = amqp.DialConfig(urlStr, amqp.Config{
+			TLSClientConfig: tlsConfig,
+		})
+	} else {
+		conn, err = amqp.Dial(urlStr)
+	}
+
 	if err != nil {
 		return fmt.Errorf("failed to connect to AMQP server: %w", err)
 	}
@@ -68,6 +91,78 @@ func (p *Publisher) connect() error {
 
 	log.Printf("AMQP connection established - URL: %s, Queue: %s", p.config.URL, p.config.Queue)
 	return nil
+}
+
+// encodeURLPassword URL-encodes the password in an AMQP URL to handle special characters.
+// This is necessary because some credential rotation systems generate passwords with
+// characters like +, =, / that need encoding in URLs.
+func encodeURLPassword(rawURL string) (string, error) {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse URL: %w", err)
+	}
+
+	user := u.User
+	if user == nil {
+		return rawURL, nil
+	}
+
+	password, hasPassword := user.Password()
+	if !hasPassword || password == "" {
+		return rawURL, nil
+	}
+
+	encodedPassword := encodeUserInfoPassword(password)
+
+	return strings.Replace(rawURL, password, encodedPassword, 1), nil
+}
+
+// encodeUserInfoPassword encodes special characters in a password for use in URL userinfo.
+// Characters +, =, / have special meaning in URLs and must be percent-encoded.
+func encodeUserInfoPassword(password string) string {
+	var sb strings.Builder
+	for _, c := range password {
+		switch c {
+		case '+':
+			sb.WriteString("%2B")
+		case '=':
+			sb.WriteString("%3D")
+		case '/':
+			sb.WriteString("%2F")
+		default:
+			sb.WriteRune(c)
+		}
+	}
+	return sb.String()
+}
+
+// buildTLSConfig builds a TLS configuration from the AMQP config
+func (p *Publisher) buildTLSConfig() (*tls.Config, error) {
+	tlsConfig := &tls.Config{
+		InsecureSkipVerify: p.config.TLSInsecureSkipVerify,
+	}
+
+	if p.config.TLSCertFile != "" && p.config.TLSKeyFile != "" {
+		cert, err := tls.LoadX509KeyPair(p.config.TLSCertFile, p.config.TLSKeyFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load client certificate: %w", err)
+		}
+		tlsConfig.Certificates = []tls.Certificate{cert}
+	}
+
+	if p.config.TLSCAFile != "" {
+		caCert, err := os.ReadFile(p.config.TLSCAFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read CA certificate: %w", err)
+		}
+		caCertPool := x509.NewCertPool()
+		if !caCertPool.AppendCertsFromPEM(caCert) {
+			return nil, fmt.Errorf("failed to parse CA certificate")
+		}
+		tlsConfig.RootCAs = caCertPool
+	}
+
+	return tlsConfig, nil
 }
 
 // PublishCloudEvent publishes a CloudEvent to the AMQP broker, reconnecting once on a closed connection.

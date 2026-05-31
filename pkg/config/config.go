@@ -9,33 +9,43 @@ import (
 
 // AMQPConfig holds the configuration for the AMQP output plugin
 type AMQPConfig struct {
-	URL         string
-	Exchange    string
-	RoutingKey  string
-	Queue       string
-	CloudEvents bool
-	EventSource string
-	EventType   string
-	Durable     bool
-	AutoDelete  bool
-	Exclusive   bool
-	NoWait      bool
+	URL                   string
+	Exchange              string
+	RoutingKey            string
+	Queue                 string
+	CloudEvents           bool
+	EventSource           string
+	EventType             string
+	Durable               bool
+	AutoDelete            bool
+	Exclusive             bool
+	NoWait                bool
+	TLS                   bool
+	TLSInsecureSkipVerify bool
+	TLSCAFile             string
+	TLSCertFile           string
+	TLSKeyFile            string
 }
 
 // DefaultConfig returns a new AMQPConfig with default values
 func DefaultConfig() *AMQPConfig {
 	return &AMQPConfig{
-		URL:         "amqp://guest:guest@localhost:5672/",
-		Exchange:    "",
-		RoutingKey:  "fluent-bit-events",
-		Queue:       "fluent-bit-events",
-		CloudEvents: true,
-		EventSource: "fluent-bit",
-		EventType:   "fluent-bit.log",
-		Durable:     true,
-		AutoDelete:  false,
-		Exclusive:   false,
-		NoWait:      false,
+		URL:                   "amqp://guest:guest@localhost:5672/",
+		Exchange:              "",
+		RoutingKey:            "fluent-bit-events",
+		Queue:                 "fluent-bit-events",
+		CloudEvents:           true,
+		EventSource:           "fluent-bit",
+		EventType:             "fluent-bit.log",
+		Durable:               true,
+		AutoDelete:            false,
+		Exclusive:             false,
+		NoWait:                false,
+		TLS:                   false,
+		TLSInsecureSkipVerify: false,
+		TLSCAFile:             "",
+		TLSCertFile:           "",
+		TLSKeyFile:            "",
 	}
 }
 
@@ -73,5 +83,20 @@ func (c *AMQPConfig) LoadFromFluentBit(plugin unsafe.Pointer) {
 	}
 	if noWait := output.FLBPluginConfigKey(plugin, "no_wait"); noWait != "" {
 		c.NoWait, _ = strconv.ParseBool(noWait)
+	}
+	if tls := output.FLBPluginConfigKey(plugin, "tls"); tls != "" {
+		c.TLS, _ = strconv.ParseBool(tls)
+	}
+	if tlsInsecureSkipVerify := output.FLBPluginConfigKey(plugin, "tls_insecure_skip_verify"); tlsInsecureSkipVerify != "" {
+		c.TLSInsecureSkipVerify, _ = strconv.ParseBool(tlsInsecureSkipVerify)
+	}
+	if tlsCAFile := output.FLBPluginConfigKey(plugin, "tls_ca_file"); tlsCAFile != "" {
+		c.TLSCAFile = tlsCAFile
+	}
+	if tlsCertFile := output.FLBPluginConfigKey(plugin, "tls_cert_file"); tlsCertFile != "" {
+		c.TLSCertFile = tlsCertFile
+	}
+	if tlsKeyFile := output.FLBPluginConfigKey(plugin, "tls_key_file"); tlsKeyFile != "" {
+		c.TLSKeyFile = tlsKeyFile
 	}
 }

@@ -134,3 +134,50 @@ func TestNormalizeRecord_Slice(t *testing.T) {
 		t.Errorf("expected x=1, got %v", m["x"])
 	}
 }
+
+func TestEncodeURLPassword(t *testing.T) {
+	tests := []struct {
+		name    string
+		rawURL  string
+		wantURL string
+	}{
+		{
+			name:    "no password",
+			rawURL:  "amqp://guest@localhost:5672/",
+			wantURL: "amqp://guest@localhost:5672/",
+		},
+		{
+			name:    "simple password",
+			rawURL:  "amqp://guest:password@localhost:5672/",
+			wantURL: "amqp://guest:password@localhost:5672/",
+		},
+		{
+			name:    "password with plus",
+			rawURL:  "amqp://user:QR+bllqd3Ikt@localhost:5672/",
+			wantURL: "amqp://user:QR%2Bbllqd3Ikt@localhost:5672/",
+		},
+		{
+			name:    "password with equals",
+			rawURL:  "amqp://user:abc=123@localhost:5672/",
+			wantURL: "amqp://user:abc%3D123@localhost:5672/",
+		},
+		{
+			name:    "complex password like vault",
+			rawURL:  "amqp://fluentbit:QR+bllqd3IktDyX9FolFT5+Aq+8Fdv9A@queues.bankrut.lan:5672/system",
+			wantURL: "amqp://fluentbit:QR%2Bbllqd3IktDyX9FolFT5%2BAq%2B8Fdv9A@queues.bankrut.lan:5672/system",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := encodeURLPassword(tt.rawURL)
+			if err != nil {
+				t.Errorf("encodeURLPassword() error = %v", err)
+				return
+			}
+			if got != tt.wantURL {
+				t.Errorf("encodeURLPassword() = %v, want %v", got, tt.wantURL)
+			}
+		})
+	}
+}
