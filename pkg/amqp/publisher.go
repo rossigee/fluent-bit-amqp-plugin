@@ -42,9 +42,9 @@ func (p *Publisher) connect() error {
 	}
 
 	if p.config.TLS {
-		tlsConfig, err := p.buildTLSConfig()
-		if err != nil {
-			return fmt.Errorf("failed to build TLS config: %w", err)
+		tlsConfig, tlsErr := p.buildTLSConfig()
+		if tlsErr != nil {
+			return fmt.Errorf("failed to build TLS config: %w", tlsErr)
 		}
 		conn, err = amqp.DialConfig(urlStr, amqp.Config{
 			TLSClientConfig: tlsConfig,
