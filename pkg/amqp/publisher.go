@@ -181,6 +181,7 @@ func isValidEncodedPassword(password string) bool {
 
 // buildTLSConfig builds a TLS configuration from the AMQP config
 func (p *Publisher) buildTLSConfig() (*tls.Config, error) {
+	// #nosec G402 - TLSInsecureSkipVerify is intentionally configurable for development/testing
 	tlsConfig := &tls.Config{
 		InsecureSkipVerify: p.config.TLSInsecureSkipVerify,
 	}
