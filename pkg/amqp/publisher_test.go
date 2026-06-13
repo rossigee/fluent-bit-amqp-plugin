@@ -102,14 +102,14 @@ func TestNormalizeRecord_InterfaceKeys(t *testing.T) {
 		t.Fatalf("expected map[string]interface{}, got %T", result)
 	}
 	if m["msg"] != "hello" {
-		t.Errorf("expected msg=hello, got %v", m["msg"])
+		t.Errorf("expected msg=hello, got %v", m)
 	}
 	nested, ok := m["nested"].(map[string]interface{})
 	if !ok {
 		t.Fatalf("expected nested map[string]interface{}, got %T", m["nested"])
 	}
 	if nested["k"] != "v" {
-		t.Errorf("expected nested k=v, got %v", nested["k"])
+		t.Errorf("expected nested k=v, got %v", nested)
 	}
 }
 
@@ -131,7 +131,7 @@ func TestNormalizeRecord_Slice(t *testing.T) {
 		t.Fatalf("expected map[string]interface{} in slice, got %T", s[0])
 	}
 	if m["x"] != 1 {
-		t.Errorf("expected x=1, got %v", m["x"])
+		t.Errorf("expected x=1, got %v", m)
 	}
 }
 
@@ -165,6 +165,11 @@ func TestEncodeURLPassword(t *testing.T) {
 			name:    "complex password like vault",
 			rawURL:  "amqp://fluentbit:QR+bllqd3IktDyX9FolFT5+Aq+8Fdv9A@queues.bankrut.lan:5672/system",
 			wantURL: "amqp://fluentbit:QR%2Bbllqd3IktDyX9FolFT5%2BAq%2B8Fdv9A@queues.bankrut.lan:5672/system",
+		},
+		{
+			name:    "already encoded password - should not double encode",
+			rawURL:  "amqps://fluentbit:Fz%2FZC7XqFnb%2F9uGZkjiprNqbR0HgHIjc@queues.bankrut.lan:5671/system",
+			wantURL: "amqps://fluentbit:Fz%2FZC7XqFnb%2F9uGZkjiprNqbR0HgHIjc@queues.bankrut.lan:5671/system",
 		},
 	}
 
