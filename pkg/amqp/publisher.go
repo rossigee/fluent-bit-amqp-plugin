@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"net/url"
 	"os"
 	"strconv"
@@ -17,6 +16,7 @@ import (
 	cloudevents "github.com/cloudevents/sdk-go/v2"
 	amqp "github.com/rabbitmq/amqp091-go"
 	"github.com/rossigee/fluent-bit-amqp-plugin/pkg/config"
+	"go.uber.org/zap"
 )
 
 // Publisher handles AMQP message publishing
@@ -24,12 +24,30 @@ type Publisher struct {
 	config     *config.AMQPConfig
 	connection *amqp.Connection
 	channel    *amqp.Channel
+	logger     *zap.SugaredLogger
 }
 
 // NewPublisher creates a new AMQP publisher with the given configuration
 func NewPublisher(cfg *config.AMQPConfig) (*Publisher, error) {
 	p := &Publisher{config: cfg}
 	return p, nil
+}
+
+// SetLogger sets the logger for the publisher
+func (p *Publisher) SetLogger(logger *zap.SugaredLogger) {
+	p.logger = logger
+}
+
+func (p *Publisher) logError(msg string, err error) {
+	if p.logger != nil {
+		p.logger.Errorw(msg, "error", err)
+	}
+}
+
+func (p *Publisher) logInfo(msg string, fields ...interface{}) {
+	if p.logger != nil {
+		p.logger.Infow(msg, fields...)
+	}
 }
 
 // connect establishes connection and channel to AMQP broker
@@ -61,7 +79,7 @@ func (p *Publisher) connect() error {
 	ch, err := conn.Channel()
 	if err != nil {
 		if closeErr := conn.Close(); closeErr != nil {
-			log.Printf("Failed to close connection during cleanup: %v", closeErr)
+			p.logError("Failed to close connection during cleanup", closeErr)
 		}
 		return fmt.Errorf("failed to open AMQP channel: %w", err)
 	}
@@ -78,10 +96,10 @@ func (p *Publisher) connect() error {
 		)
 		if err != nil {
 			if closeErr := ch.Close(); closeErr != nil {
-				log.Printf("Failed to close channel during cleanup: %v", closeErr)
+				p.logError("Failed to close channel during cleanup", closeErr)
 			}
 			if closeErr := conn.Close(); closeErr != nil {
-				log.Printf("Failed to close connection during cleanup: %v", closeErr)
+				p.logError("Failed to close connection during cleanup", closeErr)
 			}
 			return fmt.Errorf("failed to declare queue: %w", err)
 		}
@@ -90,7 +108,9 @@ func (p *Publisher) connect() error {
 	p.connection = conn
 	p.channel = ch
 
-	log.Printf("AMQP connection established - Queue: %s", p.config.Queue)
+	if p.logger != nil {
+		p.logger.Infow("AMQP connection established", "queue", p.config.Queue)
+	}
 	return nil
 }
 
@@ -250,12 +270,12 @@ func (p *Publisher) reconnect() error {
 	// Close existing connections
 	if p.channel != nil {
 		if closeErr := p.channel.Close(); closeErr != nil {
-			log.Printf("Failed to close channel during reconnect: %v", closeErr)
+			p.logError("Failed to close channel during reconnect", closeErr)
 		}
 	}
 	if p.connection != nil {
 		if closeErr := p.connection.Close(); closeErr != nil {
-			log.Printf("Failed to close connection during reconnect: %v", closeErr)
+			p.logError("Failed to close connection during reconnect", closeErr)
 		}
 	}
 
@@ -264,7 +284,7 @@ func (p *Publisher) reconnect() error {
 		return fmt.Errorf("failed to reconnect: %w", err)
 	}
 
-	log.Printf("Successfully reconnected to AMQP")
+	p.logInfo("Successfully reconnected to AMQP")
 	return nil
 }
 
@@ -364,6 +384,6 @@ func (p *Publisher) Close() error {
 	}
 	p.channel = nil
 	p.connection = nil
-	log.Printf("AMQP connection closed")
+	p.logInfo("AMQP connection closed")
 	return nil
 }

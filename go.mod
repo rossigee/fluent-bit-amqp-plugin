@@ -7,6 +7,7 @@ require (
 	github.com/fluent/fluent-bit-go v0.0.0-20260305090907-bda21e692da6
 	github.com/google/uuid v1.6.0
 	github.com/rabbitmq/amqp091-go v1.11.0
+	go.uber.org/zap v1.28.0
 )
 
 require (
@@ -16,5 +17,4 @@ require (
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/ugorji/go/codec v1.3.1 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	go.uber.org/zap v1.28.0 // indirect
 )
