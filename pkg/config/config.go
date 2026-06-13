@@ -25,6 +25,7 @@ type AMQPConfig struct {
 	TLSCAFile             string
 	TLSCertFile           string
 	TLSKeyFile            string
+	ConnectOnStartup      bool
 }
 
 // DefaultConfig returns a new AMQPConfig with default values
@@ -46,6 +47,7 @@ func DefaultConfig() *AMQPConfig {
 		TLSCAFile:             "",
 		TLSCertFile:           "",
 		TLSKeyFile:            "",
+		ConnectOnStartup:      true,
 	}
 }
 
@@ -98,5 +100,8 @@ func (c *AMQPConfig) LoadFromFluentBit(plugin unsafe.Pointer) {
 	}
 	if tlsKeyFile := output.FLBPluginConfigKey(plugin, "tls_key_file"); tlsKeyFile != "" {
 		c.TLSKeyFile = tlsKeyFile
+	}
+	if connectOnStartup := output.FLBPluginConfigKey(plugin, "connect_on_startup"); connectOnStartup != "" {
+		c.ConnectOnStartup, _ = strconv.ParseBool(connectOnStartup)
 	}
 }

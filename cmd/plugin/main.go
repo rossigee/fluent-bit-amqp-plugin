@@ -79,6 +79,15 @@ func FLBPluginInit(plugin unsafe.Pointer) int {
 		publisher: publisher,
 	}
 
+	// Eagerly connect on startup if configured
+	if cfg.ConnectOnStartup {
+		if err := publisher.EnsureConnection(); err != nil {
+			logger.Errorw("Failed to establish AMQP connection on startup", "error", err)
+			return output.FLB_ERROR
+		}
+		logger.Infow("AMQP connection established on startup", "url", maskPassword(cfg.URL), "queue", cfg.Queue)
+	}
+
 	// Initialize CloudEvent wrapper only when enabled
 	if cfg.CloudEvents {
 		state.wrapper = cloudevents.NewWrapper(&cloudevents.WrapperConfig{
