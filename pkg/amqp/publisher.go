@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -118,8 +119,13 @@ func encodeURLPassword(rawURL string) (string, error) {
 }
 
 // encodeUserInfoPassword encodes special characters in a password for use in URL userinfo.
-// Characters +, =, / have special meaning in URLs and must be percent-encoded.
+// Characters +, =, /, % have special meaning in URLs and must be percent-encoded.
+// If the password is already URL-encoded (contains % but not as part of valid encoding),
+// it is returned as-is to avoid double-encoding.
 func encodeUserInfoPassword(password string) string {
+	if strings.Contains(password, "%") && !isValidEncodedPassword(password) {
+		return password
+	}
 	var sb strings.Builder
 	for _, c := range password {
 		switch c {
@@ -129,11 +135,28 @@ func encodeUserInfoPassword(password string) string {
 			sb.WriteString("%3D")
 		case '/':
 			sb.WriteString("%2F")
+		case '%':
+			sb.WriteString("%25")
 		default:
 			sb.WriteRune(c)
 		}
 	}
 	return sb.String()
+}
+
+func isValidEncodedPassword(password string) bool {
+	if len(password) < 3 {
+		return false
+	}
+	for i := 0; i < len(password)-2; i++ {
+		if password[i] == '%' {
+			hex := password[i+1 : i+3]
+			if _, err := strconv.ParseInt(hex, 16, 16); err != nil {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // buildTLSConfig builds a TLS configuration from the AMQP config
