@@ -3,7 +3,9 @@ package main
 import (
 	"C"
 	"log"
+	"net/url"
 	"os"
+	"strings"
 	"time"
 	"unsafe"
 
@@ -12,6 +14,19 @@ import (
 	"github.com/rossigee/fluent-bit-amqp-plugin/pkg/cloudevents"
 	"github.com/rossigee/fluent-bit-amqp-plugin/pkg/config"
 )
+
+func maskPassword(rawURL string) string {
+	u, err := url.Parse(rawURL)
+	if err != nil || u.User == nil {
+		return rawURL
+	}
+	_, hasPassword := u.User.Password()
+	if !hasPassword {
+		return rawURL
+	}
+	password, _ := u.User.Password()
+	return strings.Replace(rawURL, password, "****", 1)
+}
 
 // Global plugin state
 type PluginState struct {
@@ -54,9 +69,9 @@ func FLBPluginInit(plugin unsafe.Pointer) int {
 			Type:   cfg.EventType,
 		})
 		log.Printf("AMQP plugin initialized (CloudEvents) - URL: %s, Queue: %s, Source: %s, Type: %s",
-			cfg.URL, cfg.Queue, cfg.EventSource, cfg.EventType)
+			maskPassword(cfg.URL), cfg.Queue, cfg.EventSource, cfg.EventType)
 	} else {
-		log.Printf("AMQP plugin initialized (plain JSON) - URL: %s, Queue: %s", cfg.URL, cfg.Queue)
+		log.Printf("AMQP plugin initialized (plain JSON) - URL: %s, Queue: %s", maskPassword(cfg.URL), cfg.Queue)
 	}
 
 	pluginState = state
