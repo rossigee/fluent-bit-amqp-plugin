@@ -2,7 +2,6 @@ package main
 
 import (
 	"C"
-	"log"
 	"net/url"
 	"os"
 	"strings"
@@ -13,6 +12,7 @@ import (
 	"github.com/rossigee/fluent-bit-amqp-plugin/pkg/amqp"
 	"github.com/rossigee/fluent-bit-amqp-plugin/pkg/cloudevents"
 	"github.com/rossigee/fluent-bit-amqp-plugin/pkg/config"
+	"go.uber.org/zap"
 )
 
 func maskPassword(rawURL string) string {
@@ -36,9 +36,25 @@ type PluginState struct {
 }
 
 var pluginState *PluginState
+var logger *zap.SugaredLogger
+
+func initLogger(debug bool) *zap.SugaredLogger {
+	var zapLogger *zap.Logger
+	var err error
+	if debug {
+		zapLogger, err = zap.NewDevelopment()
+	} else {
+		zapLogger, err = zap.NewProduction()
+	}
+	if err != nil {
+		return zap.NewNop().Sugar()
+	}
+	return zapLogger.Sugar()
+}
 
 //export FLBPluginRegister
 func FLBPluginRegister(def unsafe.Pointer) int {
+	logger = initLogger(false)
 	return output.FLBPluginRegister(def, "amqp", "Send log records to AMQP queue (plain JSON or CloudEvents)")
 }
 
@@ -53,9 +69,10 @@ func FLBPluginInit(plugin unsafe.Pointer) int {
 	// Initialize AMQP publisher
 	publisher, err := amqp.NewPublisher(cfg)
 	if err != nil {
-		log.Printf("Failed to initialize AMQP publisher: %v", err)
+		logger.Errorf("Failed to initialize AMQP publisher: %v", err)
 		return output.FLB_ERROR
 	}
+	publisher.SetLogger(logger)
 
 	state := &PluginState{
 		config:    cfg,
@@ -68,10 +85,17 @@ func FLBPluginInit(plugin unsafe.Pointer) int {
 			Source: cfg.EventSource,
 			Type:   cfg.EventType,
 		})
-		log.Printf("AMQP plugin initialized (CloudEvents) - URL: %s, Queue: %s, Source: %s, Type: %s",
-			maskPassword(cfg.URL), cfg.Queue, cfg.EventSource, cfg.EventType)
+		logger.Infow("AMQP plugin initialized",
+			"mode", "CloudEvents",
+			"url", maskPassword(cfg.URL),
+			"queue", cfg.Queue,
+			"source", cfg.EventSource,
+			"type", cfg.EventType)
 	} else {
-		log.Printf("AMQP plugin initialized (plain JSON) - URL: %s, Queue: %s", maskPassword(cfg.URL), cfg.Queue)
+		logger.Infow("AMQP plugin initialized",
+			"mode", "plain JSON",
+			"url", maskPassword(cfg.URL),
+			"queue", cfg.Queue)
 	}
 
 	pluginState = state
@@ -81,7 +105,7 @@ func FLBPluginInit(plugin unsafe.Pointer) int {
 //export FLBPluginFlushCtx
 func FLBPluginFlushCtx(ctx, data unsafe.Pointer, length C.int, tag *C.char) int {
 	if pluginState == nil {
-		log.Printf("Plugin not initialized")
+		logger.Error("Plugin not initialized")
 		return output.FLB_ERROR
 	}
 
@@ -102,7 +126,7 @@ func FLBPluginFlushCtx(ctx, data unsafe.Pointer, length C.int, tag *C.char) int 
 		if pluginState.wrapper != nil {
 			event, wrapErr := pluginState.wrapper.WrapRecord(timestamp, record, tagStr)
 			if wrapErr != nil {
-				log.Printf("Failed to wrap record as CloudEvent: %v", wrapErr)
+				logger.Errorw("Failed to wrap record as CloudEvent", "error", wrapErr)
 				errors++
 				continue
 			}
@@ -112,7 +136,7 @@ func FLBPluginFlushCtx(ctx, data unsafe.Pointer, length C.int, tag *C.char) int 
 		}
 
 		if err != nil {
-			log.Printf("Failed to publish record: %v", err)
+			logger.Errorw("Failed to publish record", "error", err)
 			errors++
 			continue
 		}
@@ -120,10 +144,10 @@ func FLBPluginFlushCtx(ctx, data unsafe.Pointer, length C.int, tag *C.char) int 
 		count++
 	}
 
-	log.Printf("Successfully published %d records to AMQP queue", count)
+	logger.Debugw("Published records", "count", count, "errors", errors)
 
 	if errors > 0 {
-		log.Printf("Failed to publish %d records", errors)
+		logger.Errorw("Publish completed with errors", "errors", errors)
 		return output.FLB_RETRY
 	}
 
@@ -135,10 +159,10 @@ func FLBPluginExit() int {
 	if pluginState != nil {
 		if pluginState.publisher != nil {
 			if err := pluginState.publisher.Close(); err != nil {
-				log.Printf("Error closing AMQP publisher: %v", err)
+				logger.Errorw("Error closing AMQP publisher", "error", err)
 			}
 		}
-		log.Printf("AMQP plugin shutdown")
+		logger.Info("AMQP plugin shutdown")
 	}
 	return output.FLB_OK
 }
@@ -146,6 +170,7 @@ func FLBPluginExit() int {
 var version = "dev"
 
 func main() {
-	log.Printf("Fluent Bit AMQP output plugin v%s", version)
+	logger = initLogger(false)
+	logger.Infow("Fluent Bit AMQP output plugin", "version", version)
 	os.Exit(0)
 }
