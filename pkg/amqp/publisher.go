@@ -89,7 +89,7 @@ func (p *Publisher) connect() error {
 	p.connection = conn
 	p.channel = ch
 
-	log.Printf("AMQP connection established - URL: %s, Queue: %s", p.config.URL, p.config.Queue)
+	log.Printf("AMQP connection established - Queue: %s", p.config.Queue)
 	return nil
 }
 
