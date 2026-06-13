@@ -236,6 +236,11 @@ func (p *Publisher) ensureConnection() error {
 	return p.connect()
 }
 
+// EnsureConnection is the public wrapper for ensureConnection
+func (p *Publisher) EnsureConnection() error {
+	return p.ensureConnection()
+}
+
 // publishOnce attempts a single publish of a CloudEvent without any retry logic.
 func (p *Publisher) publishOnce(event *cloudevents.Event) error {
 	eventBytes, err := json.Marshal(event)
