@@ -6,7 +6,7 @@ VERSION ?= $(shell cat VERSION)
 COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 
-GO_VERSION = 1.26.4
+GO_VERSION = 1.27.0
 CGO_ENABLED = 1
 GOOS ?= linux
 GOARCH ?= amd64
@@ -20,7 +20,9 @@ REGISTRY ?= ghcr.io
 IMAGE_NAME ?= rossigee/fluent-bit-amqp-plugin
 INIT_IMAGE_NAME ?= rossigee/fluent-bit-amqp-plugin-init
 
-.PHONY: help build build-all build-plugin build-init-container clean test test-unit test-integration \
+.PHONY: help build build-all build-plugin build-plugin-docker build-plugin-linux-amd64 \
+        build-plugin-linux-arm64 build-plugin-linux-arm64-optional build-init-container \
+        clean test test-unit test-integration \
         fmt vet lint security-scan deps mod-tidy install docker-build docker-push \
         release-local release-github setup-dev info validate
 
@@ -95,50 +97,78 @@ test-coverage:
 ## build: Build all targets
 build: build-plugin
 
-## build-all: Build plugin for multiple architectures
+## build-all: Build plugin for all supported architectures (glibc-matched via bookworm builder)
 build-all: build-plugin-linux-amd64 build-plugin-linux-arm64-optional
 
-## build-plugin: Build the plugin shared library
+## build-plugin: Build the plugin shared library (host toolchain, for local dev/compile checks)
 build-plugin: deps fmt vet
-	@echo "Building $(PLUGIN_NAME).so..."
+	@echo "Building $(PLUGIN_NAME).so (host)..."
 	CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) \
 		go build -buildmode=c-shared \
 		-ldflags="$(LDFLAGS)" \
 		-tags="$(BUILD_TAGS)" \
 		-o $(PLUGIN_NAME).so \
 		./cmd/plugin
-	@echo "Plugin built successfully: $(PLUGIN_NAME).so"
+	@echo "Plugin built: $(PLUGIN_NAME).so"
 
-## build-plugin-linux-amd64: Build plugin for Linux AMD64
+## build-plugin-docker: Build the plugin inside the bookworm builder (glibc matches the runtime)
+build-plugin-docker:
+	@echo "Building $(PLUGIN_NAME).so in bookworm builder..."
+	docker build -f build/Dockerfile.builder \
+		--build-arg VERSION=$(VERSION) \
+		--build-arg COMMIT=$(COMMIT) \
+		--build-arg DATE=$(DATE) \
+		--build-arg GO_VERSION=$(GO_VERSION) \
+		-t $(PLUGIN_NAME)-builder .
+	@rm -f $(PLUGIN_NAME).so
+	docker create --name $(PLUGIN_NAME)-extract $(PLUGIN_NAME)-builder
+	docker cp $(PLUGIN_NAME)-extract:/out_amqp.so $(PLUGIN_NAME).so
+	docker rm -f $(PLUGIN_NAME)-extract
+	@echo "Plugin built: $(PLUGIN_NAME).so"
+
+## build-plugin-linux-amd64: Build plugin for Linux AMD64 (glibc-matched)
 build-plugin-linux-amd64:
-	@$(MAKE) build-plugin GOOS=linux GOARCH=amd64
+	@$(MAKE) build-plugin-docker
 	@cp $(PLUGIN_NAME).so $(PLUGIN_NAME)-linux-amd64.so
 
-## build-plugin-linux-arm64: Build plugin for Linux ARM64
+## build-plugin-linux-arm64: Build plugin for Linux ARM64 (glibc-matched)
 build-plugin-linux-arm64:
-	@$(MAKE) build-plugin GOOS=linux GOARCH=arm64
-	@mv $(PLUGIN_NAME).so $(PLUGIN_NAME)-linux-arm64.so
+	@echo "Building $(PLUGIN_NAME).so for linux/arm64 in bookworm builder..."
+	docker build -f build/Dockerfile.builder --platform linux/arm64 \
+		--build-arg VERSION=$(VERSION) \
+		--build-arg COMMIT=$(COMMIT) \
+		--build-arg DATE=$(DATE) \
+		--build-arg GO_VERSION=$(GO_VERSION) \
+		--build-arg TARGETARCH=arm64 \
+		-t $(PLUGIN_NAME)-builder-arm64 .
+	@rm -f $(PLUGIN_NAME).so
+	docker create --name $(PLUGIN_NAME)-extract-arm64 $(PLUGIN_NAME)-builder-arm64
+	docker cp $(PLUGIN_NAME)-extract-arm64:/out_amqp.so $(PLUGIN_NAME).so
+	docker rm -f $(PLUGIN_NAME)-extract-arm64
+	@cp $(PLUGIN_NAME).so $(PLUGIN_NAME)-linux-arm64.so
 
 ## build-plugin-linux-arm64-optional: Build plugin for Linux ARM64 (optional)
 build-plugin-linux-arm64-optional:
 	@echo "Attempting ARM64 build..."
-	@if $(MAKE) build-plugin GOOS=linux GOARCH=arm64 2>/dev/null; then \
-		cp $(PLUGIN_NAME).so $(PLUGIN_NAME)-linux-arm64.so; \
+	@if docker build -f build/Dockerfile.builder --platform linux/arm64 \
+		--build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) \
+		--build-arg DATE=$(DATE) --build-arg GO_VERSION=$(GO_VERSION) \
+		--build-arg TARGETARCH=arm64 -t $(PLUGIN_NAME)-builder-arm64 . 2>/dev/null; then \
+		docker create --name $(PLUGIN_NAME)-extract-arm64 $(PLUGIN_NAME)-builder-arm64 && \
+		docker cp $(PLUGIN_NAME)-extract-arm64:/out_amqp.so $(PLUGIN_NAME).so && \
+		docker rm -f $(PLUGIN_NAME)-extract-arm64 && \
+		cp $(PLUGIN_NAME).so $(PLUGIN_NAME)-linux-arm64.so && \
 		echo "ARM64 build successful"; \
 	else \
-		echo "ARM64 build failed (fluent-bit-go constraints) - skipping"; \
+		echo "ARM64 build failed (builder/emulation constraints) - skipping"; \
 	fi
 
-## build-static: Build statically linked plugin
-build-static: deps
-	@echo "Building static $(PLUGIN_NAME).so..."
-	CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) \
-		go build -buildmode=c-shared \
-		-ldflags="$(LDFLAGS) -extldflags '-static'" \
-		-tags="$(BUILD_TAGS) static_build" \
-		-o $(PLUGIN_NAME).so \
-		./cmd/plugin
-	@echo "Static plugin built successfully: $(PLUGIN_NAME).so"
+## build-init-container: Build init container image (carries the plugin .so into the DaemonSet volume)
+build-init-container:
+	@echo "Building init container image..."
+	docker build -f build/init-container/Dockerfile -t $(REGISTRY)/$(INIT_IMAGE_NAME):$(VERSION) .
+	docker tag $(REGISTRY)/$(INIT_IMAGE_NAME):$(VERSION) $(REGISTRY)/$(INIT_IMAGE_NAME):latest
+	@echo "Init container built: $(REGISTRY)/$(INIT_IMAGE_NAME):$(VERSION)"
 
 ## build-init-container: Build init container image
 build-init-container:

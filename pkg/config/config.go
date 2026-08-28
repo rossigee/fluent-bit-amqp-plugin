@@ -31,7 +31,7 @@ type AMQPConfig struct {
 // DefaultConfig returns a new AMQPConfig with default values
 func DefaultConfig() *AMQPConfig {
 	return &AMQPConfig{
-		URL:                   "amqp://guest:guest@localhost:5672/",
+		URL:                   "amqp://localhost:5672/",
 		Exchange:              "",
 		RoutingKey:            "fluent-bit-events",
 		Queue:                 "fluent-bit-events",

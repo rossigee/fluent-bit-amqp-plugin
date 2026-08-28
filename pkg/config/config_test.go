@@ -12,7 +12,7 @@ func TestDefaultConfig(t *testing.T) {
 		got  interface{}
 		want interface{}
 	}{
-		{"URL", cfg.URL, "amqp://guest:guest@localhost:5672/"},
+		{"URL", cfg.URL, "amqp://localhost:5672/"},
 		{"Exchange", cfg.Exchange, ""},
 		{"RoutingKey", cfg.RoutingKey, "fluent-bit-events"},
 		{"Queue", cfg.Queue, "fluent-bit-events"},

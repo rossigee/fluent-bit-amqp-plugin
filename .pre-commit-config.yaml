@@ -32,19 +32,19 @@ repos:
       - id: golangci-lint
 
   - repo: https://github.com/Lucas-C/pre-commit-hooks
-    rev: v1.5.5
+    rev: v1.5.6
     hooks:
       - id: remove-tabs
         exclude: '(Makefile|\.mk|\.go|go\.mod)$'
 
   - repo: https://github.com/adrienverge/yamllint
-    rev: v1.37.1
+    rev: v1.38.0
     hooks:
       - id: yamllint
         args: [-c=.yamllint.yaml]
 
   - repo: https://github.com/hadolint/hadolint
-    rev: v2.13.1-beta
+    rev: v2.15.1
     hooks:
       - id: hadolint-docker
         args: [--ignore=DL3008, --ignore=DL3009]

@@ -3,7 +3,7 @@ version: '3.8'
 
 services:
   rabbitmq:
-    image: rabbitmq:3-management-alpine
+    image: rabbitmq:4.3.5-management-alpine
     container_name: rabbitmq-dev
     hostname: rabbitmq
     restart: unless-stopped

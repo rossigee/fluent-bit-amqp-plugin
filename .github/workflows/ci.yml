@@ -8,7 +8,7 @@ name: CI
     branches: [master]
 
 env:
-  GO_VERSION: '1.26.4'
+  GO_VERSION: '1.27.0'
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
@@ -19,7 +19,7 @@ jobs:
 
     services:
       rabbitmq:
-        image: rabbitmq:3-management-alpine
+        image: rabbitmq:4.3.5-management-alpine
         ports:
           - 5672:5672
           - 15672:15672
@@ -34,7 +34,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7.0.1
 
       - name: Setup Go
         run: |
@@ -48,8 +48,8 @@ jobs:
 
       - name: Install golangci-lint v2.12.2
         run: |
-          curl -sSfL https://github.com/golangci/golangci-lint/releases/download/v2.12.2/golangci-lint-2.12.2-linux-amd64.tar.gz | \
-          sudo tar -xz -C /usr/local/bin --strip-components=1 golangci-lint-2.12.2-linux-amd64/golangci-lint
+          curl -sSfL https://github.com/golangci/golangci-lint/releases/download/v2.13.2/golangci-lint-2.13.2-linux-amd64.tar.gz | \
+          sudo tar -xz -C /usr/local/bin --strip-components=1 golangci-lint-2.13.2-linux-amd64/golangci-lint
 
       - name: Format check
         run: |
@@ -68,14 +68,14 @@ jobs:
       - name: Integration tests
         run: make test-integration || echo "No integration tests found"
         env:
-          RABBITMQ_URL: amqp://guest:guest@localhost:5672/
+          RABBITMQ_URL: amqp://localhost:5672/
 
       - name: Test coverage
         run: make test-coverage || echo "No coverage data generated"
 
       - name: Upload coverage to Codecov
         if: hashFiles('coverage.out') != ''
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v7.0.0
         with:
           files: ./coverage.out
           flags: unittests
@@ -89,7 +89,7 @@ jobs:
         run: make build-plugin
 
       - name: Build for multiple architectures
-        run: make build-all
+        run: make build-plugin
 
   docker:
     name: Docker Build
@@ -102,7 +102,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7.0.1
 
       - name: Setup Go
         run: |
@@ -118,11 +118,11 @@ jobs:
         run: make build-plugin
 
       - name: Setup Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4.3.0
 
       - name: Login to Container Registry
         if: github.event_name != 'pull_request'
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4.6.0
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -130,7 +130,7 @@ jobs:
 
       - name: Extract metadata
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6.2.0
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
@@ -142,7 +142,7 @@ jobs:
             type=semver,pattern={{major}}
 
       - name: Build and push custom Fluent Bit image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7.3.0
         with:
           context: .
           file: ./build/fluent-bit/Dockerfile

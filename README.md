@@ -84,6 +84,14 @@ sudo cp out_amqp-linux-amd64.so /usr/local/lib/fluent-bit/
 fluent-bit -e /usr/local/lib/fluent-bit/out_amqp-linux-amd64.so -c fluent-bit.conf
 ```
 
+### Kubernetes
+
+A DaemonSet manifest is provided in `deploy/kubernetes/daemonset.yaml`. It runs the
+official `fluent/fluent-bit` image and uses the
+`ghcr.io/rossigee/fluent-bit-amqp-plugin-init` init container to inject the plugin
+`.so` into a shared volume. Both images are published with each release
+(`:latest` and `:<version>`).
+
 ### Building from Source
 
 ```bash
@@ -98,11 +106,16 @@ make build
 make docker-build
 ```
 
+> The plugin is a `glibc` shared object (`out_amqp.so`). The release build compiles it
+> inside the Fluent Bit base image so its `glibc` matches the runtime and it loads
+> correctly when Fluent Bit `dlopen`s it. A standalone static binary is not applicable
+> to a Fluent Bit plugin.
+
 ## ⚙️ Configuration Reference
 
 | Parameter | Description | Default | Required |
 |-----------|-------------|---------|----------|
-| `url` | AMQP connection URL | `amqp://guest:guest@localhost:5672/` | No |
+| `url` | AMQP connection URL | `amqp://localhost:5672/` | No |
 | `exchange` | AMQP exchange name | `""` (default exchange) | No |
 | `routing_key` | Routing key for messages | `fluent-bit-events` | No |
 | `queue` | Queue name to declare/use | `fluent-bit-events` | No |
@@ -260,7 +273,7 @@ Record fields are merged at the top level with `@timestamp` and `tag` alongside 
 
 ### Prerequisites
 
-- Go 1.25.1+
+- Go 1.27.0+
 - Docker
 - RabbitMQ (for testing)
 
