@@ -153,6 +153,9 @@ func FLBPluginFlushCtx(ctx, data unsafe.Pointer, length C.int, tag *C.char) int 
 		count++
 	}
 
+	if count > 0 {
+		logger.Infow("Successfully published records to AMQP queue", "count", count, "queue", pluginState.config.Queue)
+	}
 	logger.Debugw("Published records", "count", count, "errors", errors)
 
 	if errors > 0 {
