@@ -22,7 +22,7 @@ INIT_IMAGE_NAME ?= rossigee/fluent-bit-amqp-plugin-init
 
 .PHONY: help build build-all build-plugin build-plugin-docker build-plugin-linux-amd64 \
         build-plugin-linux-arm64 build-plugin-linux-arm64-optional build-init-container \
-        clean test test-unit test-integration \
+        clean test test-unit test-integration test-e2e \
         fmt vet lint security-scan deps mod-tidy install docker-build docker-push \
         release-local release-github setup-dev info validate
 
@@ -87,6 +87,14 @@ test-integration:
 	else \
 		echo "No integration tests found in ./test/integration/"; \
 	fi
+
+## test-e2e: Run end-to-end tests (Fluent Bit loads the plugin and publishes to RabbitMQ; requires Docker)
+test-e2e: build-plugin
+	@docker compose -f test/e2e/docker-compose.yml up -d --build --wait || { docker compose -f test/e2e/docker-compose.yml logs; docker compose -f test/e2e/docker-compose.yml down -v; exit 1; }
+	@status=0; go test -count=1 -tags e2e -v ./test/e2e/ || status=$$?; \
+	if [ $$status -ne 0 ]; then docker compose -f test/e2e/docker-compose.yml logs fluent-bit; fi; \
+	docker compose -f test/e2e/docker-compose.yml down -v; \
+	exit $$status
 
 ## test-coverage: Run tests with coverage report
 test-coverage:
