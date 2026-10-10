@@ -82,6 +82,8 @@ __pycache__/
 # Plugin artifacts
 out_*.so
 out_*.h
+# Root binary from `go build ./cmd/plugin` run without -o (anchored so cmd/plugin/ stays tracked)
+/plugin
 
 # Testing artifacts
 rabbitmq_data/
