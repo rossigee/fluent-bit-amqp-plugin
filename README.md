@@ -273,7 +273,7 @@ Record fields are merged at the top level with `@timestamp` and `tag` alongside 
 
 ### Prerequisites
 
-- Go 1.27.0+
+- Go 1.27.1+
 - Docker
 - RabbitMQ (for testing)
 
