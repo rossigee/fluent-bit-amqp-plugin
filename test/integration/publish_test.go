@@ -3,8 +3,11 @@
 package integration
 
 import (
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -331,5 +334,103 @@ func TestPublishRecord_NoTag(t *testing.T) {
 
 	if _, ok := payload["tag"]; ok {
 		t.Error("expected tag field to be absent when tag is empty")
+	}
+}
+
+// tlsClientConfig builds the consumer-side TLS config from certificate files
+// supplied via the environment. Empty paths are skipped.
+func tlsClientConfig(t *testing.T, caFile, certFile, keyFile string) *tls.Config {
+	t.Helper()
+	cfg := &tls.Config{}
+	if caFile != "" {
+		caPEM, err := os.ReadFile(caFile)
+		if err != nil {
+			t.Fatalf("reading CA file: %v", err)
+		}
+		pool := x509.NewCertPool()
+		if !pool.AppendCertsFromPEM(caPEM) {
+			t.Fatalf("parsing CA file %s: no certificates found", caFile)
+		}
+		cfg.RootCAs = pool
+	}
+	if certFile != "" && keyFile != "" {
+		cert, err := tls.LoadX509KeyPair(certFile, keyFile)
+		if err != nil {
+			t.Fatalf("loading client keypair: %v", err)
+		}
+		cfg.Certificates = []tls.Certificate{cert}
+	}
+	return cfg
+}
+
+// TestPublishTLS verifies that records are published over AMQPS with server
+// certificate verification and, when configured, client certificate
+// authentication. It requires a TLS-enabled broker and is skipped unless
+// RABBITMQ_TLS_URL is set. Certificates are supplied from existing files:
+//
+//	RABBITMQ_TLS_URL        amqps:// URL of the broker
+//	RABBITMQ_TLS_CA_FILE    CA certificate that signed the broker certificate (optional; system roots otherwise)
+//	RABBITMQ_TLS_CERT_FILE  client certificate (optional)
+//	RABBITMQ_TLS_KEY_FILE   client private key (optional)
+func TestPublishTLS(t *testing.T) {
+	url := os.Getenv("RABBITMQ_TLS_URL")
+	if url == "" {
+		t.Skip("RABBITMQ_TLS_URL not set; skipping TLS integration test")
+	}
+	caFile := os.Getenv("RABBITMQ_TLS_CA_FILE")
+	certFile := os.Getenv("RABBITMQ_TLS_CERT_FILE")
+	keyFile := os.Getenv("RABBITMQ_TLS_KEY_FILE")
+
+	queueName := "integration-test-tls"
+	cfg := config.DefaultConfig()
+	cfg.URL = url
+	cfg.TLS = true
+	cfg.TLSCAFile = caFile
+	cfg.TLSCertFile = certFile
+	cfg.TLSKeyFile = keyFile
+	cfg.Queue = queueName
+	cfg.RoutingKey = queueName
+	cfg.Durable = false
+	cfg.AutoDelete = true
+
+	pub, err := amqp.NewPublisher(cfg)
+	if err != nil {
+		t.Fatalf("NewPublisher: %v", err)
+	}
+	defer func() {
+		if err := pub.Close(); err != nil {
+			t.Logf("Close: %v", err)
+		}
+	}()
+
+	ts := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	record := map[string]interface{}{"message": "hello over tls"}
+	if err := pub.PublishRecord(ts, record, "test.tls"); err != nil {
+		t.Fatalf("PublishRecord over TLS: %v", err)
+	}
+
+	conn, err := amqplib.DialConfig(url, amqplib.Config{
+		TLSClientConfig: tlsClientConfig(t, caFile, certFile, keyFile),
+	})
+	if err != nil {
+		t.Fatalf("consumer dial over TLS: %v", err)
+	}
+	defer conn.Close() //nolint:errcheck
+
+	ch, err := conn.Channel()
+	if err != nil {
+		t.Fatalf("consumer channel: %v", err)
+	}
+	defer ch.Close() //nolint:errcheck
+
+	msg, ok, err := ch.Get(queueName, true)
+	if err != nil {
+		t.Fatalf("ch.Get: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected 1 message over TLS, got none")
+	}
+	if !strings.Contains(string(msg.Body), "hello over tls") {
+		t.Errorf("unexpected body: %s", msg.Body)
 	}
 }
