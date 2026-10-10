@@ -66,12 +66,12 @@ jobs:
         run: make test-unit
 
       - name: Integration tests
-        run: make test-integration || echo "No integration tests found"
+        run: make test-integration
         env:
           RABBITMQ_URL: amqp://localhost:5672/
 
       - name: Test coverage
-        run: make test-coverage || echo "No coverage data generated"
+        run: make test-coverage
 
       - name: Upload coverage to Codecov
         if: hashFiles('coverage.out') != ''
@@ -81,15 +81,41 @@ jobs:
           flags: unittests
           name: codecov-umbrella
 
+      - name: Install gosec
+        run: |
+          go install github.com/securego/gosec/v2/cmd/gosec@v2.29.0
+          echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
+
       - name: Security scan
-        run: make security-scan || echo "No security scanner available"
-        continue-on-error: true
+        run: make security-scan
 
       - name: Build plugin
         run: make build-plugin
 
       - name: Build for multiple architectures
         run: make build-plugin
+
+  e2e:
+    name: End-to-End
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+
+      - name: Setup Go
+        run: |
+          wget -q https://go.dev/dl/go${{ env.GO_VERSION }}.linux-amd64.tar.gz
+          sudo rm -rf /usr/local/go
+          sudo tar -C /usr/local -xzf go${{ env.GO_VERSION }}.linux-amd64.tar.gz
+          echo "/usr/local/go/bin" >> $GITHUB_PATH
+
+      - name: Install dependencies
+        run: make deps
+
+      - name: End-to-end tests
+        run: make test-e2e
 
   docker:
     name: Docker Build

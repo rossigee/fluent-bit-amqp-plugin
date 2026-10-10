@@ -140,6 +140,22 @@ func TestNormalizeRecord_Slice(t *testing.T) {
 	}
 }
 
+func TestNormalizeRecord_ByteSliceValues(t *testing.T) {
+	// The Fluent Bit decoder returns string values as []byte; they must not reach JSON as base64.
+	input := map[interface{}]interface{}{
+		"message": []byte("e2e-marker-record"),
+		"nested":  map[interface{}]interface{}{"level": []byte("info")},
+	}
+	result := normalizeRecord(input).(map[string]interface{})
+	if result["message"] != "e2e-marker-record" {
+		t.Errorf("message: got %#v, want string", result["message"])
+	}
+	nested := result["nested"].(map[string]interface{})
+	if nested["level"] != "info" {
+		t.Errorf("nested level: got %#v, want string", nested["level"])
+	}
+}
+
 func TestEncodeURLPassword(t *testing.T) {
 	tests := []struct {
 		name    string

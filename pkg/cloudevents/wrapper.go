@@ -27,7 +27,9 @@ func NewWrapper(config *WrapperConfig) *Wrapper {
 }
 
 // normalizeRecord converts map[interface{}]interface{} to map[string]interface{}
-// recursively, which is required for JSON marshaling support.
+// recursively, which is required for JSON marshaling support. The Fluent Bit decoder
+// returns string values as []byte, which encoding/json would emit as base64, so those
+// are converted back to strings.
 func normalizeRecord(v interface{}) interface{} {
 	switch v := v.(type) {
 	case map[interface{}]interface{}:
@@ -43,6 +45,8 @@ func normalizeRecord(v interface{}) interface{} {
 			result[i] = normalizeRecord(item)
 		}
 		return result
+	case []byte:
+		return string(v)
 	default:
 		return v
 	}

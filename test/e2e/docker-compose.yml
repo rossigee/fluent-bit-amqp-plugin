@@ -1,0 +1,30 @@
+# End-to-end environment: RabbitMQ plus the repo's Fluent Bit image with the
+# AMQP plugin loaded. No TLS, so no certificates are required.
+services:
+  rabbitmq:
+    image: rabbitmq:4.3.5-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: e2e
+      RABBITMQ_DEFAULT_PASS: e2e-password
+    ports:
+      - "5672:5672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 10s
+      retries: 20
+      start_period: 10s
+
+  fluent-bit:
+    build:
+      # Built from the repo root so out_amqp.so (from make build-plugin) is in the context
+      context: ../..
+      dockerfile: build/fluent-bit/Dockerfile
+    command: ["/fluent-bit/bin/fluent-bit", "-c", "/fluent-bit/etc/fluent-bit.conf"]
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      RABBITMQ_URL: amqp://e2e:e2e-password@rabbitmq:5672/
+    volumes:
+      - ./fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf:ro
