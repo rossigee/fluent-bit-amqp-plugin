@@ -144,3 +144,32 @@ func TestWrapRecord_MapWithInterfaceKey(t *testing.T) {
 		t.Errorf("event not JSON-serializable: %v", err)
 	}
 }
+
+func TestWrapRecord_SliceWithInterfaceKeys(t *testing.T) {
+	w := newTestWrapper()
+	// Fluent Bit delivers interface-keyed maps at every level, so the record is built that way.
+	record := map[interface{}]interface{}{
+		"items": []interface{}{
+			map[interface{}]interface{}{"id": 1},
+			"plain",
+		},
+	}
+
+	event, err := w.WrapRecord(time.Now(), record, "")
+	if err != nil {
+		t.Fatalf("WrapRecord with slice of interface-keyed maps: %v", err)
+	}
+
+	var data map[string]interface{}
+	if err := json.Unmarshal(event.Data(), &data); err != nil {
+		t.Fatalf("event data not JSON: %v", err)
+	}
+	items, ok := data["items"].([]interface{})
+	if !ok || len(items) != 2 {
+		t.Fatalf("items: got %#v, want 2-element slice", data["items"])
+	}
+	first, ok := items[0].(map[string]interface{})
+	if !ok || first["id"] != float64(1) {
+		t.Errorf("items[0]: got %#v, want map with id=1", items[0])
+	}
+}
