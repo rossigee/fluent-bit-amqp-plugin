@@ -3,10 +3,12 @@ package amqp
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
+	amqp "github.com/rabbitmq/amqp091-go"
 	"github.com/rossigee/fluent-bit-amqp-plugin/pkg/config"
 )
 
@@ -296,5 +298,86 @@ func TestBuildTLSConfig_ValidCAFile(t *testing.T) {
 	}
 	if tlsConfig.InsecureSkipVerify {
 		t.Error("expected certificate verification to remain enabled")
+	}
+}
+
+func TestQueueArguments(t *testing.T) {
+	tests := []struct {
+		name      string
+		queueType string
+		queueMode string
+		want      amqp.Table
+	}{
+		{name: "classic default sends no arguments", queueType: "classic", queueMode: "default", want: nil},
+		{name: "empty type and mode send no arguments", queueType: "", queueMode: "", want: nil},
+		{name: "lazy classic", queueType: "classic", queueMode: "lazy", want: amqp.Table{"x-queue-mode": "lazy"}},
+		{name: "quorum", queueType: "quorum", queueMode: "default", want: amqp.Table{"x-queue-type": "quorum"}},
+		{name: "stream", queueType: "stream", queueMode: "default", want: amqp.Table{"x-queue-type": "stream"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := config.DefaultConfig()
+			cfg.QueueType = tt.queueType
+			cfg.QueueMode = tt.queueMode
+			got := queueArguments(cfg)
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("queueArguments() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestMessageProperties_Defaults(t *testing.T) {
+	props := messageProperties(config.DefaultConfig())
+
+	if props.DeliveryMode != amqp.Persistent {
+		t.Errorf("DeliveryMode = %d, want %d (persistent)", props.DeliveryMode, amqp.Persistent)
+	}
+	if props.ContentType != "application/json" {
+		t.Errorf("ContentType = %q, want application/json", props.ContentType)
+	}
+	if props.AppId != "fluent-bit" {
+		t.Errorf("AppId = %q, want fluent-bit", props.AppId)
+	}
+	if props.Expiration != "" {
+		t.Errorf("Expiration = %q, want unset when expiration is 0", props.Expiration)
+	}
+	if props.Priority != 0 {
+		t.Errorf("Priority = %d, want 0", props.Priority)
+	}
+	if props.Type != "" {
+		t.Errorf("Type = %q, want empty", props.Type)
+	}
+}
+
+func TestMessageProperties_Overrides(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Persistent = false
+	cfg.Expiration = 60000
+	cfg.Priority = 5
+	cfg.MessageType = "log"
+	cfg.AppID = "edge-01"
+	cfg.ContentType = "application/cloudevents+json"
+
+	props := messageProperties(cfg)
+
+	if props.DeliveryMode != amqp.Transient {
+		t.Errorf("DeliveryMode = %d, want %d (transient)", props.DeliveryMode, amqp.Transient)
+	}
+	if props.Expiration != "60000" {
+		t.Errorf("Expiration = %q, want 60000", props.Expiration)
+	}
+	if props.Priority != 5 {
+		t.Errorf("Priority = %d, want 5", props.Priority)
+	}
+	if props.Type != "log" {
+		t.Errorf("Type = %q, want log", props.Type)
+	}
+	if props.AppId != "edge-01" {
+		t.Errorf("AppId = %q, want edge-01", props.AppId)
+	}
+	if props.ContentType != "application/cloudevents+json" {
+		t.Errorf("ContentType = %q, want application/cloudevents+json", props.ContentType)
 	}
 }

@@ -67,7 +67,10 @@ func FLBPluginInit(plugin unsafe.Pointer) int {
 	cfg := config.DefaultConfig()
 
 	// Load configuration from Fluent Bit
-	cfg.LoadFromFluentBit(plugin)
+	if err := cfg.LoadFromFluentBit(plugin); err != nil {
+		logger.Errorf("Failed to load configuration: %v", err)
+		return output.FLB_ERROR
+	}
 
 	// Initialize AMQP publisher
 	publisher, err := amqp.NewPublisher(cfg)

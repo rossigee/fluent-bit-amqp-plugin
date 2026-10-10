@@ -123,11 +123,27 @@ make docker-build
 | `event_source` | CloudEvent source field (CloudEvents only) | `fluent-bit` | No |
 | `event_type` | CloudEvent type field (CloudEvents only) | `fluent-bit.log` | No |
 | `durable` | Declare queue as durable | `true` | No |
+| `queue_type` | Queue type: `classic`, `quorum` or `stream` | `classic` | No |
+| `queue_mode` | Classic queue mode: `default` or `lazy` | `default` | No |
+| `persistent` | Publish messages with delivery mode 2 (survive broker restart) | `true` | No |
+| `expiration` | Per-message TTL in milliseconds (`0` disables) | `0` | No |
+| `content_type` | AMQP `content_type` property | `application/json` | No |
+| `message_type` | AMQP `type` property | `""` | No |
+| `priority` | AMQP message priority, `0`–`255` | `0` | No |
+| `app_id` | AMQP `app_id` property | `fluent-bit` | No |
 | `tls` | Enable TLS/AMQPS | `false` | No |
 | `tls_insecure_skip_verify` | Skip TLS certificate verification | `false` | No |
 | `tls_ca_file` | Path to CA certificate file | `""` | No |
 | `tls_cert_file` | Path to client certificate file | `""` | No |
 | `tls_key_file` | Path to client key file | `""` | No |
+
+### Queue types and message properties
+
+- `queue_type classic` (default) and `queue_mode default` send no extra queue arguments, so existing queues are declared exactly as before.
+- `quorum` and `stream` queues require `durable true`, `exclusive false` and `auto_delete false`. The plugin refuses to start with an invalid combination and logs the reason.
+- `queue_mode lazy` applies to classic queues only.
+- **Behaviour change in 5.3.0:** `persistent` defaults to `true`. Earlier versions published without a delivery mode, which RabbitMQ stores as transient. Set `persistent false` to restore the previous behaviour.
+- `priority` only takes effect on priority queues. The plugin does not set `x-max-priority`, so declare the queue with that argument by other means if you need priorities.
 
 ### Advanced Configuration Example
 
@@ -299,8 +315,14 @@ make dev
 # Unit tests
 make test-unit
 
-# Integration tests (requires RabbitMQ)
+# Integration tests (requires RabbitMQ; tests skip when a broker is unavailable)
 make test-integration
+
+# Optional integration checks:
+#   RABBITMQ_URL=amqp://guest:guest@localhost:5672/  broker used by the tests
+#   RABBITMQ_MGMT_URL=http://localhost:15672         verify queue type and arguments via the management API
+#   RABBITMQ_TEST_CONTAINER=<name>                   restart this Docker container to test persistence
+#   RABBITMQ_TLS_URL, RABBITMQ_TLS_CA_FILE, RABBITMQ_TLS_CERT_FILE, RABBITMQ_TLS_KEY_FILE   TLS broker
 
 # All tests with coverage
 make test-coverage

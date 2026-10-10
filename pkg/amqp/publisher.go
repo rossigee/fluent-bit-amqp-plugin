@@ -29,8 +29,46 @@ type Publisher struct {
 
 // NewPublisher creates a new AMQP publisher with the given configuration
 func NewPublisher(cfg *config.AMQPConfig) (*Publisher, error) {
+	if err := cfg.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid configuration: %w", err)
+	}
 	p := &Publisher{config: cfg}
 	return p, nil
+}
+
+// queueArguments returns the queue declaration arguments for the configured queue type and mode.
+// Classic queues in default mode send no arguments, so existing declarations are unchanged.
+func queueArguments(cfg *config.AMQPConfig) amqp.Table {
+	args := amqp.Table{}
+	if !cfg.IsClassicQueue() {
+		args[amqp.QueueTypeArg] = cfg.QueueType
+	}
+	if cfg.QueueMode == config.QueueModeLazy {
+		args["x-queue-mode"] = cfg.QueueMode
+	}
+	if len(args) == 0 {
+		return nil
+	}
+	return args
+}
+
+// messageProperties returns the publishing properties shared by every message.
+func messageProperties(cfg *config.AMQPConfig) amqp.Publishing {
+	deliveryMode := amqp.Transient
+	if cfg.Persistent {
+		deliveryMode = amqp.Persistent
+	}
+	props := amqp.Publishing{
+		ContentType:  cfg.ContentType,
+		DeliveryMode: deliveryMode,
+		Type:         cfg.MessageType,
+		AppId:        cfg.AppID,
+		Priority:     uint8(cfg.Priority), // #nosec G115 - range validated by config.Validate
+	}
+	if cfg.Expiration > 0 {
+		props.Expiration = strconv.Itoa(cfg.Expiration)
+	}
+	return props
 }
 
 // SetLogger sets the logger for the publisher
@@ -92,7 +130,7 @@ func (p *Publisher) connect() error {
 			p.config.AutoDelete,
 			p.config.Exclusive,
 			p.config.NoWait,
-			nil,
+			queueArguments(p.config),
 		)
 		if err != nil {
 			if closeErr := ch.Close(); closeErr != nil {
@@ -248,22 +286,21 @@ func (p *Publisher) publishOnce(event *cloudevents.Event) error {
 		return fmt.Errorf("failed to marshal CloudEvent: %w", err)
 	}
 
+	props := messageProperties(p.config)
+	props.Body = eventBytes
+	props.Headers = amqp.Table{
+		"ce-specversion": event.SpecVersion(),
+		"ce-type":        event.Type(),
+		"ce-source":      event.Source(),
+		"ce-id":          event.ID(),
+	}
 	err = p.channel.PublishWithContext(
 		context.Background(),
 		p.config.Exchange,
 		p.config.RoutingKey,
 		false,
 		false,
-		amqp.Publishing{
-			ContentType: "application/json",
-			Body:        eventBytes,
-			Headers: amqp.Table{
-				"ce-specversion": event.SpecVersion(),
-				"ce-type":        event.Type(),
-				"ce-source":      event.Source(),
-				"ce-id":          event.ID(),
-			},
-		},
+		props,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to publish to AMQP: %w", err)
@@ -359,16 +396,15 @@ func (p *Publisher) publishRecordOnce(timestamp time.Time, record interface{}, t
 		return fmt.Errorf("failed to marshal record: %w", err)
 	}
 
+	props := messageProperties(p.config)
+	props.Body = body
 	err = p.channel.PublishWithContext(
 		context.Background(),
 		p.config.Exchange,
 		p.config.RoutingKey,
 		false,
 		false,
-		amqp.Publishing{
-			ContentType: "application/json",
-			Body:        body,
-		},
+		props,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to publish to AMQP: %w", err)

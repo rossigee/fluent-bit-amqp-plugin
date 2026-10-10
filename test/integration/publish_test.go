@@ -3,10 +3,14 @@
 package integration
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
+	"net/http"
+	"net/url"
 	"os"
+	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -41,8 +45,10 @@ func newTestPublisher(t *testing.T, queueName string) (*amqp.Publisher, func()) 
 	cfg.URL = rabbitmqURL(t)
 	cfg.Queue = queueName
 	cfg.RoutingKey = queueName
-	cfg.Durable = false
-	cfg.AutoDelete = true
+	// RabbitMQ 4.x rejects non-exclusive transient queues, so test queues are durable
+	// and removed by the returned cleanup function.
+	cfg.Durable = true
+	cfg.AutoDelete = false
 
 	pub, err := amqp.NewPublisher(cfg)
 	if err != nil {
@@ -52,8 +58,12 @@ func newTestPublisher(t *testing.T, queueName string) (*amqp.Publisher, func()) 
 		if err := pub.Close(); err != nil {
 			t.Logf("Close: %v", err)
 		}
+		deleteQueue(t, cfg.URL, queueName)
 	}
 }
+
+// consumeTimeout bounds how long consume waits for messages to become visible.
+const consumeTimeout = 5 * time.Second
 
 // consume drains up to n messages from queueName using a direct AMQP connection.
 func consume(t *testing.T, url, queueName string, n int) []amqplib.Delivery {
@@ -71,15 +81,22 @@ func consume(t *testing.T, url, queueName string, n int) []amqplib.Delivery {
 	defer ch.Close() //nolint:errcheck
 
 	var msgs []amqplib.Delivery
-	for i := 0; i < n; i++ {
+	deadline := time.Now().Add(consumeTimeout)
+	for len(msgs) < n {
 		msg, ok, err := ch.Get(queueName, true)
 		if err != nil {
 			t.Fatalf("ch.Get: %v", err)
 		}
-		if !ok {
+		if ok {
+			msgs = append(msgs, msg)
+			continue
+		}
+		// Messages published without publisher confirms may not be visible to
+		// basic.get immediately, so poll until the deadline.
+		if time.Now().After(deadline) {
 			break
 		}
-		msgs = append(msgs, msg)
+		time.Sleep(100 * time.Millisecond)
 	}
 	return msgs
 }
@@ -432,5 +449,307 @@ func TestPublishTLS(t *testing.T) {
 	}
 	if !strings.Contains(string(msg.Body), "hello over tls") {
 		t.Errorf("unexpected body: %s", msg.Body)
+	}
+}
+
+// deleteQueue removes a test queue so repeated runs start clean.
+func deleteQueue(t *testing.T, url, queueName string) {
+	t.Helper()
+	conn, err := amqplib.Dial(url)
+	if err != nil {
+		t.Logf("cleanup dial: %v", err)
+		return
+	}
+	defer conn.Close() //nolint:errcheck
+
+	ch, err := conn.Channel()
+	if err != nil {
+		t.Logf("cleanup channel: %v", err)
+		return
+	}
+	defer ch.Close() //nolint:errcheck
+
+	if _, err := ch.QueueDelete(queueName, false, false, false); err != nil {
+		t.Logf("cleanup delete %s: %v", queueName, err)
+	}
+}
+
+// mgmtQueue returns the queue's details from the RabbitMQ management API, or nil
+// when RABBITMQ_MGMT_URL (for example http://localhost:15672) is not set. Credentials
+// and vhost are taken from the AMQP URL.
+func mgmtQueue(t *testing.T, amqpURL, queueName string) map[string]interface{} {
+	t.Helper()
+	base := os.Getenv("RABBITMQ_MGMT_URL")
+	if base == "" {
+		return nil
+	}
+	u, err := url.Parse(amqpURL)
+	if err != nil {
+		t.Fatalf("parsing AMQP URL: %v", err)
+	}
+	vhost := strings.TrimPrefix(u.Path, "/")
+	if vhost == "" {
+		vhost = "/"
+	}
+	password, _ := u.User.Password()
+
+	endpoint := strings.TrimRight(base, "/") + "/api/queues/" + url.PathEscape(vhost) + "/" + url.PathEscape(queueName)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, endpoint, nil)
+	if err != nil {
+		t.Fatalf("building management request: %v", err)
+	}
+	req.SetBasicAuth(u.User.Username(), password)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("management API request: %v", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("management API %s: status %d", endpoint, resp.StatusCode)
+	}
+
+	var info map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+		t.Fatalf("decoding management API response: %v", err)
+	}
+	return info
+}
+
+// newQueueConfig returns a config for a uniquely named queue that is cleaned up by the caller.
+func newQueueConfig(url, queueName string) *config.AMQPConfig {
+	cfg := config.DefaultConfig()
+	cfg.URL = url
+	cfg.Queue = queueName
+	cfg.RoutingKey = queueName
+	// Durable so RabbitMQ 4.x accepts the declaration; callers remove the queue.
+	cfg.Durable = true
+	cfg.AutoDelete = false
+	return cfg
+}
+
+// TestQueueTypeQuorum verifies that queue_type=quorum declares a quorum queue and
+// that records published to it can be consumed.
+func TestQueueTypeQuorum(t *testing.T) {
+	url := rabbitmqURL(t)
+	queueName := "integration-test-quorum"
+	defer deleteQueue(t, url, queueName)
+
+	cfg := newQueueConfig(url, queueName)
+	cfg.QueueType = config.QueueTypeQuorum
+	cfg.Durable = true
+	cfg.AutoDelete = false
+
+	pub, err := amqp.NewPublisher(cfg)
+	if err != nil {
+		t.Fatalf("NewPublisher: %v", err)
+	}
+	defer pub.Close() //nolint:errcheck
+
+	if err := pub.PublishRecord(time.Now(), map[string]interface{}{"message": "quorum"}, "test.quorum"); err != nil {
+		t.Fatalf("PublishRecord to quorum queue: %v", err)
+	}
+	if msgs := consume(t, url, queueName, 1); len(msgs) != 1 {
+		t.Fatalf("expected 1 message from quorum queue, got %d", len(msgs))
+	}
+
+	if info := mgmtQueue(t, url, queueName); info == nil {
+		t.Log("RABBITMQ_MGMT_URL not set; queue type not verified")
+	} else if info["type"] != "quorum" {
+		t.Errorf("queue type: got %v, want quorum", info["type"])
+	}
+}
+
+// TestQueueTypeStream verifies that queue_type=stream declares a stream queue and that
+// publishing to it succeeds. Streams cannot be read with basic.get, so only the declared
+// type is checked.
+func TestQueueTypeStream(t *testing.T) {
+	url := rabbitmqURL(t)
+	queueName := "integration-test-stream"
+	defer deleteQueue(t, url, queueName)
+
+	cfg := newQueueConfig(url, queueName)
+	cfg.QueueType = config.QueueTypeStream
+	cfg.Durable = true
+	cfg.AutoDelete = false
+
+	pub, err := amqp.NewPublisher(cfg)
+	if err != nil {
+		t.Fatalf("NewPublisher: %v", err)
+	}
+	defer pub.Close() //nolint:errcheck
+
+	if err := pub.PublishRecord(time.Now(), map[string]interface{}{"message": "stream"}, "test.stream"); err != nil {
+		t.Fatalf("PublishRecord to stream queue: %v", err)
+	}
+
+	if info := mgmtQueue(t, url, queueName); info == nil {
+		t.Log("RABBITMQ_MGMT_URL not set; queue type not verified")
+	} else if info["type"] != "stream" {
+		t.Errorf("queue type: got %v, want stream", info["type"])
+	}
+}
+
+// TestQueueModeLazy verifies that queue_mode=lazy declares a classic queue with x-queue-mode=lazy.
+func TestQueueModeLazy(t *testing.T) {
+	url := rabbitmqURL(t)
+	queueName := "integration-test-lazy"
+	defer deleteQueue(t, url, queueName)
+
+	cfg := newQueueConfig(url, queueName)
+	cfg.QueueMode = config.QueueModeLazy
+
+	pub, err := amqp.NewPublisher(cfg)
+	if err != nil {
+		t.Fatalf("NewPublisher: %v", err)
+	}
+	defer pub.Close() //nolint:errcheck
+
+	if err := pub.PublishRecord(time.Now(), map[string]interface{}{"message": "lazy"}, "test.lazy"); err != nil {
+		t.Fatalf("PublishRecord to lazy queue: %v", err)
+	}
+
+	if info := mgmtQueue(t, url, queueName); info == nil {
+		t.Log("RABBITMQ_MGMT_URL not set; queue mode not verified")
+	} else {
+		args, _ := info["arguments"].(map[string]interface{})
+		if args["x-queue-mode"] != "lazy" {
+			t.Errorf("x-queue-mode: got %v, want lazy", args["x-queue-mode"])
+		}
+	}
+}
+
+// TestMessagePropertiesPublished verifies that persistent, priority, message type,
+// app id and content type reach the consumer as AMQP message properties.
+func TestMessagePropertiesPublished(t *testing.T) {
+	url := rabbitmqURL(t)
+	queueName := "integration-test-properties"
+	defer deleteQueue(t, url, queueName)
+
+	cfg := newQueueConfig(url, queueName)
+	cfg.Persistent = true
+	cfg.Priority = 5
+	cfg.MessageType = "log"
+	cfg.AppID = "edge-01"
+
+	pub, err := amqp.NewPublisher(cfg)
+	if err != nil {
+		t.Fatalf("NewPublisher: %v", err)
+	}
+	defer pub.Close() //nolint:errcheck
+
+	if err := pub.PublishRecord(time.Now(), map[string]interface{}{"message": "props"}, "test.props"); err != nil {
+		t.Fatalf("PublishRecord: %v", err)
+	}
+
+	msgs := consume(t, url, queueName, 1)
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(msgs))
+	}
+	msg := msgs[0]
+
+	if msg.DeliveryMode != amqplib.Persistent {
+		t.Errorf("DeliveryMode: got %d, want %d (persistent)", msg.DeliveryMode, amqplib.Persistent)
+	}
+	if msg.Priority != 5 {
+		t.Errorf("Priority: got %d, want 5", msg.Priority)
+	}
+	if msg.Type != "log" {
+		t.Errorf("Type: got %q, want log", msg.Type)
+	}
+	if msg.AppId != "edge-01" {
+		t.Errorf("AppId: got %q, want edge-01", msg.AppId)
+	}
+	if msg.ContentType != "application/json" {
+		t.Errorf("ContentType: got %q, want application/json", msg.ContentType)
+	}
+}
+
+// TestExpiredMessageIsRemoved verifies that a message published with expiration is
+// not delivered after its TTL has elapsed.
+func TestExpiredMessageIsRemoved(t *testing.T) {
+	url := rabbitmqURL(t)
+	queueName := "integration-test-expiration"
+	defer deleteQueue(t, url, queueName)
+
+	cfg := newQueueConfig(url, queueName)
+	cfg.Expiration = 500
+
+	pub, err := amqp.NewPublisher(cfg)
+	if err != nil {
+		t.Fatalf("NewPublisher: %v", err)
+	}
+	defer pub.Close() //nolint:errcheck
+
+	if err := pub.PublishRecord(time.Now(), map[string]interface{}{"message": "expires"}, "test.expiry"); err != nil {
+		t.Fatalf("PublishRecord: %v", err)
+	}
+
+	time.Sleep(1500 * time.Millisecond)
+
+	if msgs := consume(t, url, queueName, 1); len(msgs) != 0 {
+		t.Errorf("expected expired message to be removed, got %d message(s)", len(msgs))
+	}
+}
+
+// waitForBroker polls until the broker accepts AMQP connections or the timeout elapses.
+func waitForBroker(t *testing.T, url string, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for {
+		conn, err := amqplib.Dial(url)
+		if err == nil {
+			conn.Close() //nolint:errcheck
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("broker not ready after %s: %v", timeout, err)
+		}
+		time.Sleep(time.Second)
+	}
+}
+
+// TestPersistentMessageSurvivesRestart publishes a persistent message to a durable
+// quorum queue, restarts the broker container and checks the message is still there.
+// It requires RABBITMQ_TEST_CONTAINER to name the broker's Docker container and is
+// skipped otherwise.
+func TestPersistentMessageSurvivesRestart(t *testing.T) {
+	container := os.Getenv("RABBITMQ_TEST_CONTAINER")
+	if container == "" {
+		t.Skip("RABBITMQ_TEST_CONTAINER not set; skipping broker restart test")
+	}
+	url := rabbitmqURL(t)
+	queueName := "integration-test-persistent-restart"
+	defer deleteQueue(t, url, queueName)
+
+	cfg := newQueueConfig(url, queueName)
+	cfg.QueueType = config.QueueTypeQuorum
+	cfg.Durable = true
+	cfg.AutoDelete = false
+	cfg.Persistent = true
+
+	pub, err := amqp.NewPublisher(cfg)
+	if err != nil {
+		t.Fatalf("NewPublisher: %v", err)
+	}
+	if err := pub.PublishRecord(time.Now(), map[string]interface{}{"message": "survives restart"}, "test.restart"); err != nil {
+		t.Fatalf("PublishRecord: %v", err)
+	}
+	if err := pub.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	out, err := exec.Command("docker", "restart", container).CombinedOutput()
+	if err != nil {
+		t.Fatalf("docker restart %s: %v: %s", container, err, out)
+	}
+	waitForBroker(t, url, 90*time.Second)
+
+	msgs := consume(t, url, queueName, 1)
+	if len(msgs) != 1 {
+		t.Fatalf("expected persistent message after restart, got %d", len(msgs))
+	}
+	if !strings.Contains(string(msgs[0].Body), "survives restart") {
+		t.Errorf("unexpected body after restart: %s", msgs[0].Body)
 	}
 }
