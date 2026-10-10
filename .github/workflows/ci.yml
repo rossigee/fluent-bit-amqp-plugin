@@ -71,7 +71,7 @@ jobs:
           RABBITMQ_URL: amqp://localhost:5672/
 
       - name: Test coverage
-        run: make test-coverage || echo "No coverage data generated"
+        run: make test-coverage
 
       - name: Upload coverage to Codecov
         if: hashFiles('coverage.out') != ''
@@ -81,9 +81,13 @@ jobs:
           flags: unittests
           name: codecov-umbrella
 
+      - name: Install gosec
+        run: |
+          go install github.com/securego/gosec/v2/cmd/gosec@v2.29.0
+          echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
+
       - name: Security scan
-        run: make security-scan || echo "No security scanner available"
-        continue-on-error: true
+        run: make security-scan
 
       - name: Build plugin
         run: make build-plugin

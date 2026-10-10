@@ -18,6 +18,9 @@ coverage.html
 coverage.txt
 coverage.out
 
+# gosec report written by make security-scan
+gosec-report.json
+
 # Go workspace file
 go.work
 go.work.sum
