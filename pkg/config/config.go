@@ -132,91 +132,98 @@ func (c *AMQPConfig) validateExpirationAndPriority() error {
 
 // LoadFromFluentBit loads configuration from Fluent Bit plugin context
 func (c *AMQPConfig) LoadFromFluentBit(plugin unsafe.Pointer) error {
-	if url := output.FLBPluginConfigKey(plugin, "url"); url != "" {
+	return c.loadFrom(func(key string) string {
+		return output.FLBPluginConfigKey(plugin, key)
+	})
+}
+
+// loadFrom loads configuration, reading each key through lookup. An empty value means the key is unset.
+func (c *AMQPConfig) loadFrom(lookup func(key string) string) error {
+	if url := lookup("url"); url != "" {
 		c.URL = url
 	}
-	if exchange := output.FLBPluginConfigKey(plugin, "exchange"); exchange != "" {
+	if exchange := lookup("exchange"); exchange != "" {
 		c.Exchange = exchange
 	}
-	if routingKey := output.FLBPluginConfigKey(plugin, "routing_key"); routingKey != "" {
+	if routingKey := lookup("routing_key"); routingKey != "" {
 		c.RoutingKey = routingKey
 	}
-	if queue := output.FLBPluginConfigKey(plugin, "queue"); queue != "" {
+	if queue := lookup("queue"); queue != "" {
 		c.Queue = queue
 	}
-	if cloudEvents := output.FLBPluginConfigKey(plugin, "cloudevents"); cloudEvents != "" {
+	if cloudEvents := lookup("cloudevents"); cloudEvents != "" {
 		c.CloudEvents, _ = strconv.ParseBool(cloudEvents)
 	}
-	if eventSource := output.FLBPluginConfigKey(plugin, "event_source"); eventSource != "" {
+	if eventSource := lookup("event_source"); eventSource != "" {
 		c.EventSource = eventSource
 	}
-	if eventType := output.FLBPluginConfigKey(plugin, "event_type"); eventType != "" {
+	if eventType := lookup("event_type"); eventType != "" {
 		c.EventType = eventType
 	}
-	if durable := output.FLBPluginConfigKey(plugin, "durable"); durable != "" {
+	if durable := lookup("durable"); durable != "" {
 		c.Durable, _ = strconv.ParseBool(durable)
 	}
-	if autoDelete := output.FLBPluginConfigKey(plugin, "auto_delete"); autoDelete != "" {
+	if autoDelete := lookup("auto_delete"); autoDelete != "" {
 		c.AutoDelete, _ = strconv.ParseBool(autoDelete)
 	}
-	if exclusive := output.FLBPluginConfigKey(plugin, "exclusive"); exclusive != "" {
+	if exclusive := lookup("exclusive"); exclusive != "" {
 		c.Exclusive, _ = strconv.ParseBool(exclusive)
 	}
-	if noWait := output.FLBPluginConfigKey(plugin, "no_wait"); noWait != "" {
+	if noWait := lookup("no_wait"); noWait != "" {
 		c.NoWait, _ = strconv.ParseBool(noWait)
 	}
-	if tls := output.FLBPluginConfigKey(plugin, "tls"); tls != "" {
+	if tls := lookup("tls"); tls != "" {
 		c.TLS, _ = strconv.ParseBool(tls)
 	}
-	if tlsInsecureSkipVerify := output.FLBPluginConfigKey(plugin, "tls_insecure_skip_verify"); tlsInsecureSkipVerify != "" {
+	if tlsInsecureSkipVerify := lookup("tls_insecure_skip_verify"); tlsInsecureSkipVerify != "" {
 		c.TLSInsecureSkipVerify, _ = strconv.ParseBool(tlsInsecureSkipVerify)
 	}
-	if tlsCAFile := output.FLBPluginConfigKey(plugin, "tls_ca_file"); tlsCAFile != "" {
+	if tlsCAFile := lookup("tls_ca_file"); tlsCAFile != "" {
 		c.TLSCAFile = tlsCAFile
 	}
-	if tlsCertFile := output.FLBPluginConfigKey(plugin, "tls_cert_file"); tlsCertFile != "" {
+	if tlsCertFile := lookup("tls_cert_file"); tlsCertFile != "" {
 		c.TLSCertFile = tlsCertFile
 	}
-	if tlsKeyFile := output.FLBPluginConfigKey(plugin, "tls_key_file"); tlsKeyFile != "" {
+	if tlsKeyFile := lookup("tls_key_file"); tlsKeyFile != "" {
 		c.TLSKeyFile = tlsKeyFile
 	}
-	if connectOnStartup := output.FLBPluginConfigKey(plugin, "connect_on_startup"); connectOnStartup != "" {
+	if connectOnStartup := lookup("connect_on_startup"); connectOnStartup != "" {
 		c.ConnectOnStartup, _ = strconv.ParseBool(connectOnStartup)
 	}
-	if queueType := output.FLBPluginConfigKey(plugin, "queue_type"); queueType != "" {
+	if queueType := lookup("queue_type"); queueType != "" {
 		c.QueueType = queueType
 	}
-	if queueMode := output.FLBPluginConfigKey(plugin, "queue_mode"); queueMode != "" {
+	if queueMode := lookup("queue_mode"); queueMode != "" {
 		c.QueueMode = queueMode
 	}
-	if persistent := output.FLBPluginConfigKey(plugin, "persistent"); persistent != "" {
+	if persistent := lookup("persistent"); persistent != "" {
 		v, err := strconv.ParseBool(persistent)
 		if err != nil {
 			return fmt.Errorf("invalid persistent %q: %w", persistent, err)
 		}
 		c.Persistent = v
 	}
-	if expiration := output.FLBPluginConfigKey(plugin, "expiration"); expiration != "" {
+	if expiration := lookup("expiration"); expiration != "" {
 		v, err := strconv.Atoi(expiration)
 		if err != nil {
 			return fmt.Errorf("invalid expiration %q: %w", expiration, err)
 		}
 		c.Expiration = v
 	}
-	if contentType := output.FLBPluginConfigKey(plugin, "content_type"); contentType != "" {
+	if contentType := lookup("content_type"); contentType != "" {
 		c.ContentType = contentType
 	}
-	if messageType := output.FLBPluginConfigKey(plugin, "message_type"); messageType != "" {
+	if messageType := lookup("message_type"); messageType != "" {
 		c.MessageType = messageType
 	}
-	if priority := output.FLBPluginConfigKey(plugin, "priority"); priority != "" {
+	if priority := lookup("priority"); priority != "" {
 		v, err := strconv.Atoi(priority)
 		if err != nil {
 			return fmt.Errorf("invalid priority %q: %w", priority, err)
 		}
 		c.Priority = v
 	}
-	if appID := output.FLBPluginConfigKey(plugin, "app_id"); appID != "" {
+	if appID := lookup("app_id"); appID != "" {
 		c.AppID = appID
 	}
 	return nil

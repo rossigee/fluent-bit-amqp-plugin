@@ -753,3 +753,45 @@ func TestPersistentMessageSurvivesRestart(t *testing.T) {
 		t.Errorf("unexpected body after restart: %s", msgs[0].Body)
 	}
 }
+
+// TestPublisherReconnectsAfterBrokerRestart keeps a publisher open across a broker
+// restart and checks that the next publish re-establishes the connection and succeeds.
+// It requires RABBITMQ_TEST_CONTAINER and is skipped otherwise.
+func TestPublisherReconnectsAfterBrokerRestart(t *testing.T) {
+	container := os.Getenv("RABBITMQ_TEST_CONTAINER")
+	if container == "" {
+		t.Skip("RABBITMQ_TEST_CONTAINER not set; skipping reconnect test")
+	}
+	url := rabbitmqURL(t)
+	queueName := "integration-test-reconnect"
+	defer deleteQueue(t, url, queueName)
+
+	cfg := newQueueConfig(url, queueName)
+	cfg.QueueType = config.QueueTypeQuorum
+	cfg.AutoDelete = false
+
+	pub, err := amqp.NewPublisher(cfg)
+	if err != nil {
+		t.Fatalf("NewPublisher: %v", err)
+	}
+	defer pub.Close() //nolint:errcheck
+
+	if err := pub.PublishRecord(time.Now(), map[string]interface{}{"message": "before restart"}, "test.reconnect"); err != nil {
+		t.Fatalf("PublishRecord before restart: %v", err)
+	}
+
+	out, err := exec.Command("docker", "restart", container).CombinedOutput()
+	if err != nil {
+		t.Fatalf("docker restart %s: %v: %s", container, err, out)
+	}
+	waitForBroker(t, url, 90*time.Second)
+
+	if err := pub.PublishRecord(time.Now(), map[string]interface{}{"message": "after restart"}, "test.reconnect"); err != nil {
+		t.Fatalf("PublishRecord after restart (expected reconnect): %v", err)
+	}
+
+	msgs := consume(t, url, queueName, 2)
+	if len(msgs) != 2 {
+		t.Fatalf("expected 2 messages across restart, got %d", len(msgs))
+	}
+}

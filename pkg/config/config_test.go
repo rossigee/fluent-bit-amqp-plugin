@@ -128,3 +128,86 @@ func TestValidate(t *testing.T) {
 		})
 	}
 }
+
+func lookupFrom(values map[string]string) func(string) string {
+	return func(key string) string { return values[key] }
+}
+
+func TestLoadFrom_NewKeys(t *testing.T) {
+	cfg := DefaultConfig()
+	err := cfg.loadFrom(lookupFrom(map[string]string{
+		"queue_type":   "quorum",
+		"queue_mode":   "lazy",
+		"persistent":   "false",
+		"expiration":   "60000",
+		"content_type": "application/cloudevents+json",
+		"message_type": "log",
+		"priority":     "5",
+		"app_id":       "edge-01",
+	}))
+	if err != nil {
+		t.Fatalf("loadFrom() error = %v", err)
+	}
+
+	if cfg.QueueType != QueueTypeQuorum {
+		t.Errorf("QueueType = %q, want quorum", cfg.QueueType)
+	}
+	if cfg.QueueMode != QueueModeLazy {
+		t.Errorf("QueueMode = %q, want lazy", cfg.QueueMode)
+	}
+	if cfg.Persistent {
+		t.Error("Persistent = true, want false")
+	}
+	if cfg.Expiration != 60000 {
+		t.Errorf("Expiration = %d, want 60000", cfg.Expiration)
+	}
+	if cfg.ContentType != "application/cloudevents+json" {
+		t.Errorf("ContentType = %q", cfg.ContentType)
+	}
+	if cfg.MessageType != "log" {
+		t.Errorf("MessageType = %q, want log", cfg.MessageType)
+	}
+	if cfg.Priority != 5 {
+		t.Errorf("Priority = %d, want 5", cfg.Priority)
+	}
+	if cfg.AppID != "edge-01" {
+		t.Errorf("AppID = %q, want edge-01", cfg.AppID)
+	}
+}
+
+func TestLoadFrom_UnsetKeysKeepDefaults(t *testing.T) {
+	cfg := DefaultConfig()
+	if err := cfg.loadFrom(lookupFrom(map[string]string{})); err != nil {
+		t.Fatalf("loadFrom() error = %v", err)
+	}
+
+	want := DefaultConfig()
+	if cfg.QueueType != want.QueueType || cfg.QueueMode != want.QueueMode ||
+		cfg.Persistent != want.Persistent || cfg.Expiration != want.Expiration ||
+		cfg.ContentType != want.ContentType || cfg.MessageType != want.MessageType ||
+		cfg.Priority != want.Priority || cfg.AppID != want.AppID {
+		t.Errorf("unset keys changed defaults: got %+v, want %+v", cfg, want)
+	}
+}
+
+func TestLoadFrom_InvalidValues(t *testing.T) {
+	tests := []struct {
+		name    string
+		values  map[string]string
+		wantErr string
+	}{
+		{name: "non-boolean persistent", values: map[string]string{"persistent": "yes"}, wantErr: `invalid persistent "yes"`},
+		{name: "non-numeric expiration", values: map[string]string{"expiration": "1m"}, wantErr: `invalid expiration "1m"`},
+		{name: "non-numeric priority", values: map[string]string{"priority": "high"}, wantErr: `invalid priority "high"`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := DefaultConfig()
+			err := cfg.loadFrom(lookupFrom(tt.values))
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("loadFrom() error = %v, want it to contain %q", err, tt.wantErr)
+			}
+		})
+	}
+}

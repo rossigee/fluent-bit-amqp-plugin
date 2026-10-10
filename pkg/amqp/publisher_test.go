@@ -301,6 +301,41 @@ func TestBuildTLSConfig_ValidCAFile(t *testing.T) {
 	}
 }
 
+func TestReconnect_InvalidHost(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.URL = "amqp://invalid-host-that-does-not-exist:5672/"
+
+	publisher, err := NewPublisher(cfg)
+	if err != nil {
+		t.Fatalf("Expected no error during NewPublisher, got: %v", err)
+	}
+
+	if err := publisher.reconnect(); err == nil {
+		t.Error("Expected reconnect to fail when the host is unreachable")
+	}
+}
+
+func TestIsValidEncodedPassword(t *testing.T) {
+	tests := []struct {
+		name     string
+		password string
+		want     bool
+	}{
+		{name: "no escape sequences", password: "abc123", want: true},
+		{name: "valid escape sequence", password: "a%2Fb", want: true},
+		{name: "lone percent sign", password: "100%sure", want: false},
+		{name: "too short to hold an escape", password: "ab", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isValidEncodedPassword(tt.password); got != tt.want {
+				t.Errorf("isValidEncodedPassword(%q) = %v, want %v", tt.password, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestQueueArguments(t *testing.T) {
 	tests := []struct {
 		name      string
