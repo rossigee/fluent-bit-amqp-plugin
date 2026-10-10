@@ -173,3 +173,21 @@ func TestWrapRecord_SliceWithInterfaceKeys(t *testing.T) {
 		t.Errorf("items[0]: got %#v, want map with id=1", items[0])
 	}
 }
+
+func TestWrapRecord_ByteSliceValuesAreStrings(t *testing.T) {
+	// The Fluent Bit decoder returns string values as []byte; they must not be base64-encoded.
+	record := map[interface{}]interface{}{"message": []byte("hello")}
+
+	event, err := newTestWrapper().WrapRecord(time.Now(), record, "")
+	if err != nil {
+		t.Fatalf("WrapRecord: %v", err)
+	}
+
+	var data map[string]interface{}
+	if err := json.Unmarshal(event.Data(), &data); err != nil {
+		t.Fatalf("event data not JSON: %v", err)
+	}
+	if data["message"] != "hello" {
+		t.Errorf("message: got %#v, want \"hello\"", data["message"])
+	}
+}
