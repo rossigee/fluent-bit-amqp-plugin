@@ -1,6 +1,9 @@
 package amqp
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -184,5 +187,114 @@ func TestEncodeURLPassword(t *testing.T) {
 				t.Errorf("encodeURLPassword() = %v, want %v", got, tt.wantURL)
 			}
 		})
+	}
+}
+
+func TestBuildTLSConfig_NoFilesConfigured(t *testing.T) {
+	p := &Publisher{config: config.DefaultConfig()}
+
+	tlsConfig, err := p.buildTLSConfig()
+	if err != nil {
+		t.Fatalf("buildTLSConfig() error = %v", err)
+	}
+	if len(tlsConfig.Certificates) != 0 {
+		t.Errorf("expected no client certificates, got %d", len(tlsConfig.Certificates))
+	}
+	if tlsConfig.RootCAs != nil {
+		t.Error("expected RootCAs to be nil so system roots are used")
+	}
+}
+
+func TestBuildTLSConfig_MissingCAFile(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.TLSCAFile = filepath.Join(t.TempDir(), "does-not-exist.pem")
+	p := &Publisher{config: cfg}
+
+	_, err := p.buildTLSConfig()
+	if err == nil || !strings.Contains(err.Error(), "failed to read CA certificate") {
+		t.Fatalf("expected CA read error, got %v", err)
+	}
+}
+
+func TestBuildTLSConfig_InvalidCAFile(t *testing.T) {
+	caPath := filepath.Join(t.TempDir(), "ca.pem")
+	if err := os.WriteFile(caPath, []byte("not a PEM certificate\n"), 0o600); err != nil {
+		t.Fatalf("writing CA file: %v", err)
+	}
+	cfg := config.DefaultConfig()
+	cfg.TLSCAFile = caPath
+	p := &Publisher{config: cfg}
+
+	_, err := p.buildTLSConfig()
+	if err == nil || !strings.Contains(err.Error(), "failed to parse CA certificate") {
+		t.Fatalf("expected CA parse error, got %v", err)
+	}
+}
+
+func TestBuildTLSConfig_MissingClientKeypair(t *testing.T) {
+	dir := t.TempDir()
+	cfg := config.DefaultConfig()
+	cfg.TLSCertFile = filepath.Join(dir, "client.pem")
+	cfg.TLSKeyFile = filepath.Join(dir, "client.key")
+	p := &Publisher{config: cfg}
+
+	_, err := p.buildTLSConfig()
+	if err == nil || !strings.Contains(err.Error(), "failed to load client certificate") {
+		t.Fatalf("expected client certificate load error, got %v", err)
+	}
+}
+
+func TestBuildTLSConfig_InvalidClientKeypair(t *testing.T) {
+	dir := t.TempDir()
+	certPath := filepath.Join(dir, "client.pem")
+	keyPath := filepath.Join(dir, "client.key")
+	if err := os.WriteFile(certPath, []byte("garbage\n"), 0o600); err != nil {
+		t.Fatalf("writing cert file: %v", err)
+	}
+	if err := os.WriteFile(keyPath, []byte("garbage\n"), 0o600); err != nil {
+		t.Fatalf("writing key file: %v", err)
+	}
+	cfg := config.DefaultConfig()
+	cfg.TLSCertFile = certPath
+	cfg.TLSKeyFile = keyPath
+	p := &Publisher{config: cfg}
+
+	_, err := p.buildTLSConfig()
+	if err == nil || !strings.Contains(err.Error(), "failed to load client certificate") {
+		t.Fatalf("expected client certificate load error, got %v", err)
+	}
+}
+
+func TestBuildTLSConfig_ValidCAFile(t *testing.T) {
+	// Reuse a CA certificate from the system trust store rather than generating
+	// one, so no self-signed certificate is created by the test suite.
+	bundle, err := os.ReadFile("/etc/ssl/certs/ca-certificates.crt")
+	if err != nil {
+		t.Skipf("system CA bundle not available: %v", err)
+	}
+	start := strings.Index(string(bundle), "-----BEGIN CERTIFICATE-----")
+	end := strings.Index(string(bundle), "-----END CERTIFICATE-----")
+	if start < 0 || end < 0 {
+		t.Skip("no PEM certificate found in system CA bundle")
+	}
+	pemBlock := bundle[start : end+len("-----END CERTIFICATE-----")+1]
+
+	caPath := filepath.Join(t.TempDir(), "ca.pem")
+	if err := os.WriteFile(caPath, pemBlock, 0o600); err != nil {
+		t.Fatalf("writing CA file: %v", err)
+	}
+	cfg := config.DefaultConfig()
+	cfg.TLSCAFile = caPath
+	p := &Publisher{config: cfg}
+
+	tlsConfig, err := p.buildTLSConfig()
+	if err != nil {
+		t.Fatalf("buildTLSConfig() error = %v", err)
+	}
+	if tlsConfig.RootCAs == nil {
+		t.Error("expected RootCAs to be set from CA file")
+	}
+	if tlsConfig.InsecureSkipVerify {
+		t.Error("expected certificate verification to remain enabled")
 	}
 }
