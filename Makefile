@@ -6,7 +6,7 @@ VERSION ?= $(shell cat VERSION)
 COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 
-GO_VERSION = 1.27.0
+GO_VERSION = 1.27.1
 CGO_ENABLED = 1
 GOOS ?= linux
 GOARCH ?= amd64
@@ -38,7 +38,7 @@ help:
 setup-dev:
 	@echo "Setting up development environment..."
 	go install golang.org/x/tools/gopls@latest
-	go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0
 	go install github.com/securecodewarrior/sast-scan/cmd/gosec@latest
 	curl -sSfL https://raw.githubusercontent.com/securecodewarrior/sast-scan/main/install.sh | sh -s -- -b $(shell go env GOPATH)/bin
 	@echo "Development tools installed"

@@ -55,7 +55,10 @@ func initLogger(debug bool) *zap.SugaredLogger {
 //export FLBPluginRegister
 func FLBPluginRegister(def unsafe.Pointer) int {
 	logger = initLogger(false)
-	return output.FLBPluginRegister(def, "amqp", "Send log records to AMQP queue (plain JSON or CloudEvents)")
+	return output.FLBPluginRegisterWithOptions(def,
+		output.WithName("amqp"),
+		output.WithDescription("Send log records to AMQP queue (plain JSON or CloudEvents)"),
+	)
 }
 
 //export FLBPluginInit
