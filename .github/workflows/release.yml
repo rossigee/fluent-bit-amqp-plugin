@@ -136,11 +136,12 @@ jobs:
           MANIFEST_TAGS=""
           for arch in "${ARCHS[@]}"; do
             a="${arch#linux/}"
-            if [ ! -f "out_amqp-linux-${a}.so" ]; then
-              echo "No out_amqp-linux-${a}.so; skipping init image for ${arch}"
+            if [ ! -f "out_amqp-linux-${a}.so" ] || [ ! -f "in_amqp-linux-${a}.so" ]; then
+              echo "Missing out_amqp-linux-${a}.so or in_amqp-linux-${a}.so; skipping init image for ${arch}"
               continue
             fi
             cp "out_amqp-linux-${a}.so" out_amqp.so
+            cp "in_amqp-linux-${a}.so" in_amqp.so
             docker buildx build --platform "${arch}" \
               -f build/init-container/Dockerfile \
               -t "${REGISTRY}/${INIT_IMAGE_NAME}:${VERSION}-${a}" \
