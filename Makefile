@@ -39,7 +39,7 @@ setup-dev:
 	@echo "Setting up development environment..."
 	go install golang.org/x/tools/gopls@latest
 	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0
-	go install github.com/securego/gosec/v2/cmd/gosec@v2.29.0
+	go install github.com/securego/gosec/v2/cmd/gosec@v2.30.0
 	curl -sSfL https://raw.githubusercontent.com/securecodewarrior/sast-scan/main/install.sh | sh -s -- -b $(shell go env GOPATH)/bin
 	@echo "Development tools installed"
 

@@ -50,7 +50,7 @@ jobs:
 
       - name: Install gosec
         run: |
-          curl -sSfL https://github.com/securego/gosec/releases/download/v2.29.0/gosec_2.29.0_linux_amd64.tar.gz | \
+          curl -sSfL https://github.com/securego/gosec/releases/download/v2.30.0/gosec_2.30.0_linux_amd64.tar.gz | \
           sudo tar -xz -C /usr/local/bin gosec
 
       - name: Validate code
