@@ -1,6 +1,7 @@
 # Fluent Bit AMQP CloudEvents Output Plugin Makefile
 
 PLUGIN_NAME = out_amqp
+INPUT_PLUGIN_NAME = in_amqp
 MODULE = github.com/rossigee/fluent-bit-amqp-plugin
 VERSION ?= $(shell cat VERSION)
 COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
@@ -122,26 +123,40 @@ build-plugin: deps fmt vet
 		-o $(PLUGIN_NAME).so \
 		./cmd/plugin
 	@echo "Plugin built: $(PLUGIN_NAME).so"
+	@$(MAKE) --no-print-directory build-input-plugin
 
-## build-plugin-docker: Build the plugin inside the bookworm builder (glibc matches the runtime)
+## build-input-plugin: Build the AMQP input plugin shared library (host toolchain)
+build-input-plugin:
+	@echo "Building $(INPUT_PLUGIN_NAME).so (host)..."
+	CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) \
+		go build -buildmode=c-shared \
+		-ldflags="$(LDFLAGS)" \
+		-tags="$(BUILD_TAGS)" \
+		-o $(INPUT_PLUGIN_NAME).so \
+		./cmd/input
+	@echo "Plugin built: $(INPUT_PLUGIN_NAME).so"
+
+## build-plugin-docker: Build the plugins inside the bookworm builder (glibc matches the runtime)
 build-plugin-docker:
-	@echo "Building $(PLUGIN_NAME).so in bookworm builder..."
+	@echo "Building $(PLUGIN_NAME).so and $(INPUT_PLUGIN_NAME).so in bookworm builder..."
 	docker build -f build/Dockerfile.builder \
 		--build-arg VERSION=$(VERSION) \
 		--build-arg COMMIT=$(COMMIT) \
 		--build-arg DATE=$(DATE) \
 		--build-arg GO_VERSION=$(GO_VERSION) \
 		-t $(PLUGIN_NAME)-builder .
-	@rm -f $(PLUGIN_NAME).so
+	@rm -f $(PLUGIN_NAME).so $(INPUT_PLUGIN_NAME).so
 	docker create --name $(PLUGIN_NAME)-extract $(PLUGIN_NAME)-builder
 	docker cp $(PLUGIN_NAME)-extract:/out_amqp.so $(PLUGIN_NAME).so
+	docker cp $(PLUGIN_NAME)-extract:/in_amqp.so $(INPUT_PLUGIN_NAME).so
 	docker rm -f $(PLUGIN_NAME)-extract
-	@echo "Plugin built: $(PLUGIN_NAME).so"
+	@echo "Plugin built: $(PLUGIN_NAME).so, $(INPUT_PLUGIN_NAME).so"
 
-## build-plugin-linux-amd64: Build plugin for Linux AMD64 (glibc-matched)
+## build-plugin-linux-amd64: Build plugins for Linux AMD64 (glibc-matched)
 build-plugin-linux-amd64:
 	@$(MAKE) build-plugin-docker
 	@cp $(PLUGIN_NAME).so $(PLUGIN_NAME)-linux-amd64.so
+	@cp $(INPUT_PLUGIN_NAME).so $(INPUT_PLUGIN_NAME)-linux-amd64.so
 
 ## build-plugin-linux-arm64: Build plugin for Linux ARM64 (glibc-matched)
 build-plugin-linux-arm64:
@@ -153,11 +168,13 @@ build-plugin-linux-arm64:
 		--build-arg GO_VERSION=$(GO_VERSION) \
 		--build-arg TARGETARCH=arm64 \
 		-t $(PLUGIN_NAME)-builder-arm64 .
-	@rm -f $(PLUGIN_NAME).so
+	@rm -f $(PLUGIN_NAME).so $(INPUT_PLUGIN_NAME).so
 	docker create --name $(PLUGIN_NAME)-extract-arm64 $(PLUGIN_NAME)-builder-arm64
 	docker cp $(PLUGIN_NAME)-extract-arm64:/out_amqp.so $(PLUGIN_NAME).so
+	docker cp $(PLUGIN_NAME)-extract-arm64:/in_amqp.so $(INPUT_PLUGIN_NAME).so
 	docker rm -f $(PLUGIN_NAME)-extract-arm64
 	@cp $(PLUGIN_NAME).so $(PLUGIN_NAME)-linux-arm64.so
+	@cp $(INPUT_PLUGIN_NAME).so $(INPUT_PLUGIN_NAME)-linux-arm64.so
 
 ## build-plugin-linux-arm64-optional: Build plugin for Linux ARM64 (optional)
 build-plugin-linux-arm64-optional:
@@ -168,8 +185,10 @@ build-plugin-linux-arm64-optional:
 		--build-arg TARGETARCH=arm64 -t $(PLUGIN_NAME)-builder-arm64 . 2>/dev/null; then \
 		docker create --name $(PLUGIN_NAME)-extract-arm64 $(PLUGIN_NAME)-builder-arm64 && \
 		docker cp $(PLUGIN_NAME)-extract-arm64:/out_amqp.so $(PLUGIN_NAME).so && \
+		docker cp $(PLUGIN_NAME)-extract-arm64:/in_amqp.so $(INPUT_PLUGIN_NAME).so && \
 		docker rm -f $(PLUGIN_NAME)-extract-arm64 && \
 		cp $(PLUGIN_NAME).so $(PLUGIN_NAME)-linux-arm64.so && \
+		cp $(INPUT_PLUGIN_NAME).so $(INPUT_PLUGIN_NAME)-linux-arm64.so && \
 		echo "ARM64 build successful"; \
 	else \
 		echo "ARM64 build failed (builder/emulation constraints) - skipping"; \
@@ -206,8 +225,8 @@ docker-push:
 ## clean: Clean build artifacts
 clean:
 	@echo "Cleaning build artifacts..."
-	rm -f $(PLUGIN_NAME)*.so
-	rm -f $(PLUGIN_NAME)*.h
+	rm -f $(PLUGIN_NAME)*.so $(INPUT_PLUGIN_NAME)*.so
+	rm -f $(PLUGIN_NAME)*.h $(INPUT_PLUGIN_NAME)*.h
 	rm -f *.test
 	rm -f coverage.out coverage.html
 	rm -f gosec-report.json
@@ -247,7 +266,7 @@ info:
 release-local: clean build-all
 	@echo "Creating release artifacts..."
 	mkdir -p dist/binaries
-	cp $(PLUGIN_NAME)-*.so dist/binaries/
+	cp $(PLUGIN_NAME)-*.so $(INPUT_PLUGIN_NAME)-*.so dist/binaries/
 	cd dist/binaries && sha256sum *.so > checksums.txt
 	@echo "Release artifacts created in dist/"
 

@@ -208,6 +208,82 @@ make docker-build
     tls_insecure_skip_verify true
 ```
 
+## 📥 Input Plugin (AMQP Source)
+
+The input plugin consumes messages from a RabbitMQ queue and injects them into the Fluent Bit pipeline. It is built as a separate library, `in_amqp.so`, from `cmd/input`, and is registered as `amqp` for `[INPUT]` sections.
+
+```ini
+[INPUT]
+    Name                amqp
+    Tag                 amqp.events
+    url                 amqp://user:pass@rabbitmq:5672/
+    queue               my-queue
+    exchange            my-exchange
+    routing_key         #
+    durable             true
+    prefetch_count      10
+    cloudevents_decode  true
+```
+
+| Key | Description | Default | Required |
+|-----|-------------|---------|----------|
+| `url`, `tls*` | Connection and TLS settings, as for the output | `amqp://localhost:5672/` | No |
+| `queue` | Queue to consume from (declared if missing) | `fluent-bit-events` | Yes |
+| `exchange` | If set, the queue is bound to this exchange | `""` | No |
+| `routing_key` | Binding key used when `exchange` is set | `fluent-bit-events` | No |
+| `durable` | Declare the queue as durable | `true` | No |
+| `prefetch_count` | Unacknowledged messages the broker may send at once (must be at least 1) | `10` | No |
+| `cloudevents_decode` | Use the `data` of a CloudEvent as the record | `false` | No |
+
+Records are produced as follows:
+
+- A JSON object body becomes the record as-is.
+- With `cloudevents_decode true`, a CloudEvent (an object with `specversion`) becomes its `data` (an object is used directly; any other value is wrapped as `{"data": ...}`).
+- Any other body is wrapped as `{"message": "<body>"}`.
+
+Consumption is at-least-once. Messages are acknowledged after they have been handed to Fluent Bit. If the broker connection drops, the consumer reconnects with exponential backoff (1 s up to 30 s), and unacknowledged messages are redelivered. A crash in the window between handing a batch to Fluent Bit and the engine accepting it can lose that batch.
+
+To load the input alongside the output:
+
+```bash
+fluent-bit -e /usr/local/lib/fluent-bit/in_amqp.so -e /usr/local/lib/fluent-bit/out_amqp.so -c fluent-bit.conf
+```
+
+The Fluent Bit image shipped by this repository loads both libraries through `plugins.conf`.
+
+## 📡 MQTT Backend
+
+The output plugin can publish to an MQTT broker (Mosquitto, EMQX, HiveMQ) instead of RabbitMQ. Set `backend mqtt`; the AMQP keys are then ignored. The message bodies are the same as for AMQP: plain JSON, or CloudEvents JSON with the attributes in the body (MQTT 3.1.1 has no message headers).
+
+```ini
+[OUTPUT]
+    Name          amqp
+    Match         *
+    backend       mqtt
+    broker        tcp://localhost:1883
+    topic         fluent-bit/logs
+    qos           1
+    retain        false
+    client_id     fluent-bit-node-01
+    cloudevents   false
+```
+
+| Key | Description | Default | Required |
+|-----|-------------|---------|----------|
+| `backend` | Transport: `amqp` or `mqtt` | `amqp` | No |
+| `broker` | Broker URL: `tcp://`, `ssl://`, `ws://` or `wss://` | `tcp://localhost:1883` | No |
+| `topic` | Topic to publish to | `fluent-bit/logs` | No |
+| `qos` | Quality of service: `0` (at most once), `1` (at least once) or `2` (exactly once) | `1` | No |
+| `retain` | Set the retain flag on published messages | `false` | No |
+| `client_id` | Client identifier; must be unique per broker | `fluent-bit` | No |
+| `username`, `password` | Broker credentials | `""` | No |
+| `keepalive` | Keepalive interval in seconds | `30` | No |
+| `tls_ca_cert` | CA certificate for the broker (`ssl://` or `wss://` only) | `""` | No |
+| `tls_client_cert`, `tls_client_key` | Client certificate and key for mutual TLS (set together) | `""` | No |
+| `cloudevents`, `event_source`, `event_type` | As for AMQP | see above | No |
+
+Server certificates are always verified for `ssl://` and `wss://` brokers. The publisher reconnects automatically if the connection drops; a publish that fails returns a retry to Fluent Bit.
+
 ## 📊 Message Formats
 
 ### CloudEvents format (default, `cloudevents true`)

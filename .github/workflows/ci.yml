@@ -32,6 +32,11 @@ jobs:
           --health-timeout 30s
           --health-retries 3
 
+      mosquitto:
+        image: eclipse-mosquitto:2
+        ports:
+          - 1883:1883
+
     steps:
       - name: Checkout
         uses: actions/checkout@v7.0.1
@@ -69,6 +74,7 @@ jobs:
         run: make test-integration
         env:
           RABBITMQ_URL: amqp://localhost:5672/
+          MQTT_URL: tcp://localhost:1883
 
       - name: TLS integration tests
         run: make test-tls

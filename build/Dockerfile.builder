@@ -26,4 +26,7 @@ COPY . .
 
 RUN CGO_ENABLED=1 GOARCH=${TARGETARCH} go build -buildmode=c-shared -tags netgo \
         -ldflags="-w -s -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${DATE}" \
-        -o /out_amqp.so ./cmd/plugin
+        -o /out_amqp.so ./cmd/plugin && \
+    CGO_ENABLED=1 GOARCH=${TARGETARCH} go build -buildmode=c-shared -tags netgo \
+        -ldflags="-w -s -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${DATE}" \
+        -o /in_amqp.so ./cmd/input
