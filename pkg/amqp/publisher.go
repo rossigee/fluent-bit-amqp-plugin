@@ -25,6 +25,7 @@ type Publisher struct {
 	config     *config.AMQPConfig
 	connection *amqp.Connection
 	channel    *amqp.Channel
+	returns    chan amqp.Return
 	logger     *zap.SugaredLogger
 }
 
@@ -117,8 +118,21 @@ func (p *Publisher) connect() error {
 		}
 	}
 
+	// Publisher confirms let the broker report whether it accepted each message.
+	if err := ch.Confirm(false); err != nil {
+		if closeErr := ch.Close(); closeErr != nil {
+			p.logError("Failed to close channel during cleanup", closeErr)
+		}
+		if closeErr := conn.Close(); closeErr != nil {
+			p.logError("Failed to close connection during cleanup", closeErr)
+		}
+		return fmt.Errorf("failed to enable publisher confirms: %w", err)
+	}
+
 	p.connection = conn
 	p.channel = ch
+	// Buffered so returned messages never block the client while a publish waits.
+	p.returns = ch.NotifyReturn(make(chan amqp.Return, 16))
 
 	if p.logger != nil {
 		p.logger.Infow("AMQP connection established", "queue", p.config.Queue)
@@ -314,18 +328,41 @@ func (p *Publisher) publishOnce(event *cloudevents.Event) error {
 		"ce-source":      event.Source(),
 		"ce-id":          event.ID(),
 	}
-	err = p.channel.PublishWithContext(
-		context.Background(),
+	return p.publishConfirmed(props)
+}
+
+// publishConfirmed publishes with the mandatory flag and waits for the broker's
+// confirm. It returns an error if the broker nacks the message or cannot route
+// it to any queue, so a dropped message is never reported as published.
+func (p *Publisher) publishConfirmed(props amqp.Publishing) error {
+	ctx := context.Background()
+	confirmation, err := p.channel.PublishWithDeferredConfirmWithContext(
+		ctx,
 		p.config.Exchange,
 		p.config.RoutingKey,
-		false,
+		true,
 		false,
 		props,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to publish to AMQP: %w", err)
 	}
-	return nil
+	acked, err := confirmation.WaitContext(ctx)
+	if err != nil {
+		return fmt.Errorf("failed waiting for AMQP publisher confirm: %w", err)
+	}
+	if !acked {
+		return fmt.Errorf("broker nacked message exchange=%q routing_key=%q", p.config.Exchange, p.config.RoutingKey)
+	}
+	// The broker sends basic.return before basic.ack for an unroutable message,
+	// so any return for this publish is already queued once the ack arrives.
+	select {
+	case r := <-p.returns:
+		return fmt.Errorf("message unroutable exchange=%q routing_key=%q reply_code=%d reply_text=%q",
+			r.Exchange, r.RoutingKey, r.ReplyCode, r.ReplyText)
+	default:
+		return nil
+	}
 }
 
 // reconnect attempts to re-establish the AMQP connection
@@ -386,18 +423,7 @@ func (p *Publisher) publishRecordOnce(timestamp time.Time, record interface{}, t
 
 	props := messageProperties(p.config)
 	props.Body = body
-	err = p.channel.PublishWithContext(
-		context.Background(),
-		p.config.Exchange,
-		p.config.RoutingKey,
-		false,
-		false,
-		props,
-	)
-	if err != nil {
-		return fmt.Errorf("failed to publish to AMQP: %w", err)
-	}
-	return nil
+	return p.publishConfirmed(props)
 }
 
 // Close closes the AMQP connection and channel
