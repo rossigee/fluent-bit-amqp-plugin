@@ -52,7 +52,11 @@ func destination(cfg *config.AMQPConfig) string {
 	if cfg.Backend == config.BackendMQTT {
 		return cfg.MQTT.Broker + " topic=" + cfg.MQTT.Topic
 	}
-	return maskPassword(cfg.URL) + " queue=" + cfg.Queue
+	exchange := cfg.Exchange
+	if exchange == "" {
+		exchange = "(default)"
+	}
+	return maskPassword(cfg.URL) + " exchange=" + exchange + " routing_key=" + cfg.RoutingKey
 }
 
 // Global plugin state
