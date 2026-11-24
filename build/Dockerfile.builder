@@ -4,7 +4,7 @@
 # glibc-dynamic shared object here.
 FROM debian:bookworm
 
-ARG GO_VERSION=1.27.1
+ARG GO_VERSION=1.27.4
 ARG TARGETARCH=amd64
 ARG VERSION=dev
 ARG COMMIT=""
