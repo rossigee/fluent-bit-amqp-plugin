@@ -1,7 +1,9 @@
 package config
 
 import (
+	"errors"
 	"fmt"
+	"net/url"
 	"strconv"
 	"unsafe"
 
@@ -48,6 +50,67 @@ type AMQPConfig struct {
 	MessageType           string
 	Priority              int
 	AppID                 string
+	// Input-only settings (ignored by the output plugin)
+	PrefetchCount     int
+	CloudEventsDecode bool
+	// Backend selects the output transport: BackendAMQP (default) or BackendMQTT.
+	// When BackendMQTT is set, the AMQP settings above are ignored and MQTT holds the settings.
+	Backend string
+	MQTT    MQTTConfig
+}
+
+// Transport backends accepted by backend
+const (
+	BackendAMQP = "amqp"
+	BackendMQTT = "mqtt"
+)
+
+// MQTTConfig holds the settings for the MQTT output backend
+type MQTTConfig struct {
+	Broker        string
+	Topic         string
+	QoS           int
+	Retain        bool
+	ClientID      string
+	Username      string
+	Password      string
+	Keepalive     int
+	TLSCACert     string
+	TLSClientCert string
+	TLSClientKey  string
+}
+
+// Validate checks the MQTT settings
+func (m *MQTTConfig) Validate() error {
+	u, err := url.Parse(m.Broker)
+	if err != nil {
+		return fmt.Errorf("invalid broker %q: %w", m.Broker, err)
+	}
+	switch u.Scheme {
+	case "tcp", "ssl", "ws", "wss":
+	default:
+		return fmt.Errorf("invalid broker %q: scheme must be tcp, ssl, ws or wss", m.Broker)
+	}
+	if u.Host == "" {
+		return fmt.Errorf("invalid broker %q: missing host", m.Broker)
+	}
+	if m.Topic == "" {
+		return errors.New("topic is required for the MQTT backend")
+	}
+	if m.QoS < 0 || m.QoS > 2 {
+		return fmt.Errorf("invalid qos %d: must be 0, 1 or 2", m.QoS)
+	}
+	if m.Keepalive < 1 {
+		return fmt.Errorf("invalid keepalive %d: must be at least 1 second", m.Keepalive)
+	}
+	if (m.TLSClientCert == "") != (m.TLSClientKey == "") {
+		return errors.New("tls_client_cert and tls_client_key must be set together")
+	}
+	hasTLSFiles := m.TLSCACert != "" || m.TLSClientCert != ""
+	if hasTLSFiles && u.Scheme != "ssl" && u.Scheme != "wss" {
+		return fmt.Errorf("tls_ca_cert and tls_client_cert need an ssl:// or wss:// broker, not %s://", u.Scheme)
+	}
+	return nil
 }
 
 // DefaultConfig returns a new AMQPConfig with default values
@@ -78,11 +141,30 @@ func DefaultConfig() *AMQPConfig {
 		MessageType:           "",
 		Priority:              0,
 		AppID:                 "fluent-bit",
+		PrefetchCount:         10,
+		CloudEventsDecode:     false,
+		Backend:               BackendAMQP,
+		MQTT: MQTTConfig{
+			Broker:    "tcp://localhost:1883",
+			Topic:     "fluent-bit/logs",
+			QoS:       1,
+			Retain:    false,
+			ClientID:  "fluent-bit",
+			Keepalive: 30,
+		},
 	}
 }
 
-// Validate checks that the configuration is one RabbitMQ will accept
+// Validate checks that the configuration is one the selected backend will accept
 func (c *AMQPConfig) Validate() error {
+	switch c.Backend {
+	case "", BackendAMQP:
+	case BackendMQTT:
+		return c.MQTT.Validate()
+	default:
+		return fmt.Errorf("invalid backend %q: must be %s or %s", c.Backend, BackendAMQP, BackendMQTT)
+	}
+
 	switch c.QueueType {
 	case "", QueueTypeClassic, QueueTypeQuorum, QueueTypeStream:
 	default:
@@ -121,6 +203,9 @@ func (c *AMQPConfig) IsClassicQueue() bool {
 }
 
 func (c *AMQPConfig) validateExpirationAndPriority() error {
+	if c.PrefetchCount < 1 {
+		return fmt.Errorf("invalid prefetch_count %d: must be at least 1", c.PrefetchCount)
+	}
 	if c.Expiration < 0 {
 		return fmt.Errorf("invalid expiration %d: must be 0 (disabled) or a positive number of milliseconds", c.Expiration)
 	}
@@ -135,6 +220,11 @@ func (c *AMQPConfig) LoadFromFluentBit(plugin unsafe.Pointer) error {
 	return c.loadFrom(func(key string) string {
 		return output.FLBPluginConfigKey(plugin, key)
 	})
+}
+
+// LoadFromLookup loads configuration, reading each key through lookup. An empty value means the key is unset.
+func (c *AMQPConfig) LoadFromLookup(lookup func(key string) string) error {
+	return c.loadFrom(lookup)
 }
 
 // loadFrom loads configuration, reading each key through lookup. An empty value means the key is unset.
@@ -225,6 +315,68 @@ func (c *AMQPConfig) loadFrom(lookup func(key string) string) error {
 	}
 	if appID := lookup("app_id"); appID != "" {
 		c.AppID = appID
+	}
+	if prefetch := lookup("prefetch_count"); prefetch != "" {
+		v, err := strconv.Atoi(prefetch)
+		if err != nil {
+			return fmt.Errorf("invalid prefetch_count %q: %w", prefetch, err)
+		}
+		c.PrefetchCount = v
+	}
+	if decode := lookup("cloudevents_decode"); decode != "" {
+		v, err := strconv.ParseBool(decode)
+		if err != nil {
+			return fmt.Errorf("invalid cloudevents_decode %q: %w", decode, err)
+		}
+		c.CloudEventsDecode = v
+	}
+	if backend := lookup("backend"); backend != "" {
+		c.Backend = backend
+	}
+	if broker := lookup("broker"); broker != "" {
+		c.MQTT.Broker = broker
+	}
+	if topic := lookup("topic"); topic != "" {
+		c.MQTT.Topic = topic
+	}
+	if qos := lookup("qos"); qos != "" {
+		v, err := strconv.Atoi(qos)
+		if err != nil {
+			return fmt.Errorf("invalid qos %q: %w", qos, err)
+		}
+		c.MQTT.QoS = v
+	}
+	if retain := lookup("retain"); retain != "" {
+		v, err := strconv.ParseBool(retain)
+		if err != nil {
+			return fmt.Errorf("invalid retain %q: %w", retain, err)
+		}
+		c.MQTT.Retain = v
+	}
+	if clientID := lookup("client_id"); clientID != "" {
+		c.MQTT.ClientID = clientID
+	}
+	if username := lookup("username"); username != "" {
+		c.MQTT.Username = username
+	}
+	if password := lookup("password"); password != "" {
+		c.MQTT.Password = password
+	}
+	if keepalive := lookup("keepalive"); keepalive != "" {
+		v, err := strconv.Atoi(keepalive)
+		if err != nil {
+			return fmt.Errorf("invalid keepalive %q: %w", keepalive, err)
+		}
+		c.MQTT.Keepalive = v
+	}
+	if caCert := lookup("tls_ca_cert"); caCert != "" {
+		c.MQTT.TLSCACert = caCert
+	}
+	if clientCert := lookup("tls_client_cert"); clientCert != "" {
+		c.MQTT.TLSClientCert = clientCert
+	}
+	if clientKey := lookup("tls_client_key"); clientKey != "" {
+		c.MQTT.TLSClientKey = clientKey
 	}
 	return nil
 }

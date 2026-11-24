@@ -16,6 +16,7 @@ import (
 	cloudevents "github.com/cloudevents/sdk-go/v2"
 	amqp "github.com/rabbitmq/amqp091-go"
 	"github.com/rossigee/fluent-bit-amqp-plugin/pkg/config"
+	"github.com/rossigee/fluent-bit-amqp-plugin/pkg/payload"
 	"go.uber.org/zap"
 )
 
@@ -90,28 +91,9 @@ func (p *Publisher) logInfo(msg string, fields ...interface{}) {
 
 // connect establishes connection and channel to AMQP broker
 func (p *Publisher) connect() error {
-	var conn *amqp.Connection
-	var err error
-
-	urlStr, err := encodeURLPassword(p.config.URL)
+	conn, err := Dial(p.config)
 	if err != nil {
-		return fmt.Errorf("failed to encode URL: %w", err)
-	}
-
-	if p.config.TLS {
-		tlsConfig, tlsErr := p.buildTLSConfig()
-		if tlsErr != nil {
-			return fmt.Errorf("failed to build TLS config: %w", tlsErr)
-		}
-		conn, err = amqp.DialConfig(urlStr, amqp.Config{
-			TLSClientConfig: tlsConfig,
-		})
-	} else {
-		conn, err = amqp.Dial(urlStr)
-	}
-
-	if err != nil {
-		return fmt.Errorf("failed to connect to AMQP server: %w", err)
+		return err
 	}
 
 	ch, err := conn.Channel()
@@ -124,22 +106,14 @@ func (p *Publisher) connect() error {
 
 	// Declare queue if specified
 	if p.config.Queue != "" {
-		_, err = ch.QueueDeclare(
-			p.config.Queue,
-			p.config.Durable,
-			p.config.AutoDelete,
-			p.config.Exclusive,
-			p.config.NoWait,
-			queueArguments(p.config),
-		)
-		if err != nil {
+		if err := DeclareQueue(ch, p.config); err != nil {
 			if closeErr := ch.Close(); closeErr != nil {
 				p.logError("Failed to close channel during cleanup", closeErr)
 			}
 			if closeErr := conn.Close(); closeErr != nil {
 				p.logError("Failed to close connection during cleanup", closeErr)
 			}
-			return fmt.Errorf("failed to declare queue: %w", err)
+			return err
 		}
 	}
 
@@ -217,23 +191,64 @@ func isValidEncodedPassword(password string) bool {
 	return true
 }
 
-// buildTLSConfig builds a TLS configuration from the AMQP config
-func (p *Publisher) buildTLSConfig() (*tls.Config, error) {
-	// #nosec G402 - TLSInsecureSkipVerify is intentionally configurable for development/testing
-	tlsConfig := &tls.Config{
-		InsecureSkipVerify: p.config.TLSInsecureSkipVerify,
+// Dial opens a connection to the broker described by cfg, applying password
+// encoding and, when enabled, the TLS settings.
+func Dial(cfg *config.AMQPConfig) (*amqp.Connection, error) {
+	urlStr, err := encodeURLPassword(cfg.URL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode URL: %w", err)
 	}
 
-	if p.config.TLSCertFile != "" && p.config.TLSKeyFile != "" {
-		cert, err := tls.LoadX509KeyPair(p.config.TLSCertFile, p.config.TLSKeyFile)
+	var conn *amqp.Connection
+	if cfg.TLS {
+		tlsConfig, tlsErr := buildTLSConfig(cfg)
+		if tlsErr != nil {
+			return nil, fmt.Errorf("failed to build TLS config: %w", tlsErr)
+		}
+		conn, err = amqp.DialConfig(urlStr, amqp.Config{
+			TLSClientConfig: tlsConfig,
+		})
+	} else {
+		conn, err = amqp.Dial(urlStr)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to AMQP server: %w", err)
+	}
+	return conn, nil
+}
+
+// DeclareQueue declares the configured queue on ch using the queue settings in cfg.
+func DeclareQueue(ch *amqp.Channel, cfg *config.AMQPConfig) error {
+	if _, err := ch.QueueDeclare(
+		cfg.Queue,
+		cfg.Durable,
+		cfg.AutoDelete,
+		cfg.Exclusive,
+		cfg.NoWait,
+		queueArguments(cfg),
+	); err != nil {
+		return fmt.Errorf("failed to declare queue: %w", err)
+	}
+	return nil
+}
+
+// buildTLSConfig builds a TLS configuration from the AMQP config
+func buildTLSConfig(cfg *config.AMQPConfig) (*tls.Config, error) {
+	// #nosec G402 - TLSInsecureSkipVerify is intentionally configurable for development/testing
+	tlsConfig := &tls.Config{
+		InsecureSkipVerify: cfg.TLSInsecureSkipVerify,
+	}
+
+	if cfg.TLSCertFile != "" && cfg.TLSKeyFile != "" {
+		cert, err := tls.LoadX509KeyPair(cfg.TLSCertFile, cfg.TLSKeyFile)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load client certificate: %w", err)
 		}
 		tlsConfig.Certificates = []tls.Certificate{cert}
 	}
 
-	if p.config.TLSCAFile != "" {
-		caCert, err := os.ReadFile(p.config.TLSCAFile)
+	if cfg.TLSCAFile != "" {
+		caCert, err := os.ReadFile(cfg.TLSCAFile)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read CA certificate: %w", err)
 		}
@@ -245,6 +260,11 @@ func (p *Publisher) buildTLSConfig() (*tls.Config, error) {
 	}
 
 	return tlsConfig, nil
+}
+
+// buildTLSConfig builds a TLS configuration from the publisher's AMQP config
+func (p *Publisher) buildTLSConfig() (*tls.Config, error) {
+	return buildTLSConfig(p.config)
 }
 
 // PublishCloudEvent publishes a CloudEvent to the AMQP broker, reconnecting once on a closed connection.
@@ -331,30 +351,9 @@ func (p *Publisher) reconnect() error {
 	return nil
 }
 
-// normalizeRecord converts map[interface{}]interface{} to map[string]interface{}
-// recursively, which is required for JSON marshaling support. The Fluent Bit decoder
-// returns string values as []byte, which encoding/json would emit as base64, so those
-// are converted back to strings.
+// normalizeRecord is payload.Normalize, kept under its package-local name for the tests.
 func normalizeRecord(v interface{}) interface{} {
-	switch v := v.(type) {
-	case map[interface{}]interface{}:
-		result := make(map[string]interface{}, len(v))
-		for key, value := range v {
-			strKey := fmt.Sprintf("%v", key)
-			result[strKey] = normalizeRecord(value)
-		}
-		return result
-	case []interface{}:
-		result := make([]interface{}, len(v))
-		for i, item := range v {
-			result[i] = normalizeRecord(item)
-		}
-		return result
-	case []byte:
-		return string(v)
-	default:
-		return v
-	}
+	return payload.Normalize(v)
 }
 
 // PublishRecord publishes a raw Fluent Bit record to the AMQP broker as plain
@@ -380,24 +379,9 @@ func (p *Publisher) PublishRecord(timestamp time.Time, record interface{}, tag s
 
 // publishRecordOnce marshals and publishes a single record without retry logic.
 func (p *Publisher) publishRecordOnce(timestamp time.Time, record interface{}, tag string) error {
-	normalized, ok := normalizeRecord(record).(map[string]interface{})
-	if !ok {
-		normalized = map[string]interface{}{"data": normalizeRecord(record)}
-	}
-
-	// Merge metadata into a shallow copy so we don't mutate the original.
-	payload := make(map[string]interface{}, len(normalized)+2)
-	for k, v := range normalized {
-		payload[k] = v
-	}
-	payload["@timestamp"] = timestamp.UTC().Format(time.RFC3339)
-	if tag != "" {
-		payload["tag"] = tag
-	}
-
-	body, err := json.Marshal(payload)
+	body, err := payload.Record(timestamp, record, tag)
 	if err != nil {
-		return fmt.Errorf("failed to marshal record: %w", err)
+		return err
 	}
 
 	props := messageProperties(p.config)

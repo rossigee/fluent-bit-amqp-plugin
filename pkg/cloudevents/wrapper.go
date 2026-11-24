@@ -1,11 +1,11 @@
 package cloudevents
 
 import (
-	"fmt"
 	"time"
 
 	cloudevents "github.com/cloudevents/sdk-go/v2"
 	"github.com/google/uuid"
+	"github.com/rossigee/fluent-bit-amqp-plugin/pkg/payload"
 )
 
 // WrapperConfig holds configuration for CloudEvent creation
@@ -27,31 +27,6 @@ func NewWrapper(config *WrapperConfig) *Wrapper {
 }
 
 // normalizeRecord converts map[interface{}]interface{} to map[string]interface{}
-// recursively, which is required for JSON marshaling support. The Fluent Bit decoder
-// returns string values as []byte, which encoding/json would emit as base64, so those
-// are converted back to strings.
-func normalizeRecord(v interface{}) interface{} {
-	switch v := v.(type) {
-	case map[interface{}]interface{}:
-		result := make(map[string]interface{}, len(v))
-		for key, value := range v {
-			strKey := fmt.Sprintf("%v", key)
-			result[strKey] = normalizeRecord(value)
-		}
-		return result
-	case []interface{}:
-		result := make([]interface{}, len(v))
-		for i, item := range v {
-			result[i] = normalizeRecord(item)
-		}
-		return result
-	case []byte:
-		return string(v)
-	default:
-		return v
-	}
-}
-
 // WrapRecord converts a Fluent Bit record to a CloudEvent
 func (w *Wrapper) WrapRecord(timestamp time.Time, record interface{}, tag string) (*cloudevents.Event, error) {
 	// Create CloudEvent
@@ -63,7 +38,7 @@ func (w *Wrapper) WrapRecord(timestamp time.Time, record interface{}, tag string
 	ce.SetSpecVersion(cloudevents.VersionV1)
 
 	// Normalize record to ensure JSON marshalable types
-	normalized := normalizeRecord(record)
+	normalized := payload.Normalize(record)
 
 	// Set data from Fluent Bit record
 	if err := ce.SetData(cloudevents.ApplicationJSON, normalized); err != nil {

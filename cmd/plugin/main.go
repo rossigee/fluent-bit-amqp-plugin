@@ -8,10 +8,12 @@ import (
 	"time"
 	"unsafe"
 
+	cesdk "github.com/cloudevents/sdk-go/v2"
 	"github.com/fluent/fluent-bit-go/output"
 	"github.com/rossigee/fluent-bit-amqp-plugin/pkg/amqp"
 	"github.com/rossigee/fluent-bit-amqp-plugin/pkg/cloudevents"
 	"github.com/rossigee/fluent-bit-amqp-plugin/pkg/config"
+	"github.com/rossigee/fluent-bit-amqp-plugin/pkg/mqtt"
 	"go.uber.org/zap"
 )
 
@@ -28,10 +30,35 @@ func maskPassword(rawURL string) string {
 	return strings.Replace(rawURL, password, "****", 1)
 }
 
+// publisher is the transport-independent interface implemented by the AMQP and MQTT publishers
+type publisher interface {
+	SetLogger(logger *zap.SugaredLogger)
+	EnsureConnection() error
+	PublishCloudEvent(event *cesdk.Event) error
+	PublishRecord(timestamp time.Time, record interface{}, tag string) error
+	Close() error
+}
+
+// newPublisher returns the publisher for the configured backend
+func newPublisher(cfg *config.AMQPConfig) (publisher, error) {
+	if cfg.Backend == config.BackendMQTT {
+		return mqtt.NewPublisher(cfg)
+	}
+	return amqp.NewPublisher(cfg)
+}
+
+// destination describes where the plugin publishes, for log messages
+func destination(cfg *config.AMQPConfig) string {
+	if cfg.Backend == config.BackendMQTT {
+		return cfg.MQTT.Broker + " topic=" + cfg.MQTT.Topic
+	}
+	return maskPassword(cfg.URL) + " queue=" + cfg.Queue
+}
+
 // Global plugin state
 type PluginState struct {
 	config    *config.AMQPConfig
-	publisher *amqp.Publisher
+	publisher publisher
 	wrapper   *cloudevents.Wrapper // nil when CloudEvents is disabled
 }
 
@@ -57,7 +84,7 @@ func FLBPluginRegister(def unsafe.Pointer) int {
 	logger = initLogger(false)
 	return output.FLBPluginRegisterWithOptions(def,
 		output.WithName("amqp"),
-		output.WithDescription("Send log records to AMQP queue (plain JSON or CloudEvents)"),
+		output.WithDescription("Send log records to an AMQP queue or MQTT topic (plain JSON or CloudEvents)"),
 	)
 }
 
@@ -72,46 +99,40 @@ func FLBPluginInit(plugin unsafe.Pointer) int {
 		return output.FLB_ERROR
 	}
 
-	// Initialize AMQP publisher
-	publisher, err := amqp.NewPublisher(cfg)
+	pub, err := newPublisher(cfg)
 	if err != nil {
-		logger.Errorf("Failed to initialize AMQP publisher: %v", err)
+		logger.Errorf("Failed to initialize %s publisher: %v", cfg.Backend, err)
 		return output.FLB_ERROR
 	}
-	publisher.SetLogger(logger)
+	pub.SetLogger(logger)
 
 	state := &PluginState{
 		config:    cfg,
-		publisher: publisher,
+		publisher: pub,
 	}
 
 	// Eagerly connect on startup if configured
 	if cfg.ConnectOnStartup {
-		if err := publisher.EnsureConnection(); err != nil {
-			logger.Errorw("Failed to establish AMQP connection on startup", "error", err)
+		if err := pub.EnsureConnection(); err != nil {
+			logger.Errorw("Failed to establish connection on startup", "backend", cfg.Backend, "error", err)
 			return output.FLB_ERROR
 		}
-		logger.Infow("AMQP connection established on startup", "url", maskPassword(cfg.URL), "queue", cfg.Queue)
+		logger.Infow("Connection established on startup", "backend", cfg.Backend, "destination", destination(cfg))
 	}
 
 	// Initialize CloudEvent wrapper only when enabled
+	mode := "plain JSON"
 	if cfg.CloudEvents {
 		state.wrapper = cloudevents.NewWrapper(&cloudevents.WrapperConfig{
 			Source: cfg.EventSource,
 			Type:   cfg.EventType,
 		})
-		logger.Infow("AMQP plugin initialized",
-			"mode", "CloudEvents",
-			"url", maskPassword(cfg.URL),
-			"queue", cfg.Queue,
-			"source", cfg.EventSource,
-			"type", cfg.EventType)
-	} else {
-		logger.Infow("AMQP plugin initialized",
-			"mode", "plain JSON",
-			"url", maskPassword(cfg.URL),
-			"queue", cfg.Queue)
+		mode = "CloudEvents"
 	}
+	logger.Infow("Output plugin initialized",
+		"backend", cfg.Backend,
+		"mode", mode,
+		"destination", destination(cfg))
 
 	pluginState = state
 	return output.FLB_OK
@@ -160,7 +181,7 @@ func FLBPluginFlushCtx(ctx, data unsafe.Pointer, length C.int, tag *C.char) int 
 	}
 
 	if count > 0 {
-		logger.Infow("Successfully published records to AMQP queue", "count", count, "queue", pluginState.config.Queue)
+		logger.Infow("Successfully published records", "backend", pluginState.config.Backend, "count", count, "destination", destination(pluginState.config))
 	}
 	logger.Debugw("Published records", "count", count, "errors", errors)
 
@@ -177,10 +198,10 @@ func FLBPluginExit() int {
 	if pluginState != nil {
 		if pluginState.publisher != nil {
 			if err := pluginState.publisher.Close(); err != nil {
-				logger.Errorw("Error closing AMQP publisher", "error", err)
+				logger.Errorw("Error closing publisher", "error", err)
 			}
 		}
-		logger.Info("AMQP plugin shutdown")
+		logger.Info("Output plugin shutdown")
 	}
 	return output.FLB_OK
 }

@@ -26,6 +26,15 @@ services:
     networks:
       - fluent-net
 
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: mosquitto-dev
+    restart: unless-stopped
+    ports:
+      - "1883:1883"
+    networks:
+      - fluent-net
+
   fluent-bit:
     build:
       context: ..
