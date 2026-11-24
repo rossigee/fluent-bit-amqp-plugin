@@ -152,6 +152,7 @@ func FLBPluginFlushCtx(ctx, data unsafe.Pointer, length C.int, tag *C.char) int 
 	dec := output.NewDecoder(data, int(length))
 	count := 0
 	errors := 0
+	decoded := 0
 	tagStr := C.GoString(tag)
 
 	for {
@@ -159,6 +160,7 @@ func FLBPluginFlushCtx(ctx, data unsafe.Pointer, length C.int, tag *C.char) int 
 		if ret != 0 {
 			break
 		}
+		decoded++
 
 		timestamp := time.Unix(ts.(output.FLBTime).Unix(), 0)
 
@@ -186,6 +188,11 @@ func FLBPluginFlushCtx(ctx, data unsafe.Pointer, length C.int, tag *C.char) int 
 
 	if count > 0 {
 		logger.Infow("Successfully published records", "backend", pluginState.config.Backend, "count", count, "destination", destination(pluginState.config))
+	}
+	// A non-empty chunk that yields no records is otherwise reported as OK with no
+	// log line at all. Name it so a silent drop is visible.
+	if decoded == 0 && length > 0 {
+		logger.Warnw("Flush chunk contained no decodable records", "tag", tagStr, "bytes", int(length))
 	}
 	logger.Debugw("Published records", "count", count, "errors", errors)
 
