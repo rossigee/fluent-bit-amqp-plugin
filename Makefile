@@ -88,6 +88,10 @@ test-integration:
 		echo "No integration tests found in ./test/integration/"; \
 	fi
 
+## test-tls: Run TLS integration tests against a throwaway mutual-TLS RabbitMQ (requires Docker; localhost test certificates generated per run)
+test-tls:
+	bash test/tls/run-tls-integration.sh
+
 ## test-e2e: Run end-to-end tests (Fluent Bit loads the plugin and publishes to RabbitMQ; requires Docker)
 test-e2e: build-plugin
 	@docker compose -f test/e2e/docker-compose.yml up -d --build --wait || { docker compose -f test/e2e/docker-compose.yml logs; docker compose -f test/e2e/docker-compose.yml down -v; exit 1; }
