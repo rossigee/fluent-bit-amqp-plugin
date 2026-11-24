@@ -70,6 +70,9 @@ jobs:
         env:
           RABBITMQ_URL: amqp://localhost:5672/
 
+      - name: TLS integration tests
+        run: make test-tls
+
       - name: Test coverage
         run: make test-coverage
 

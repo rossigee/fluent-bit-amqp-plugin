@@ -1,6 +1,13 @@
 package amqp
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
+	"math/big"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -280,6 +287,61 @@ func TestBuildTLSConfig_InvalidClientKeypair(t *testing.T) {
 	_, err := p.buildTLSConfig()
 	if err == nil || !strings.Contains(err.Error(), "failed to load client certificate") {
 		t.Fatalf("expected client certificate load error, got %v", err)
+	}
+}
+
+// writeTestClientKeypair writes a short-lived ECDSA P-256 client certificate and
+// key into dir. It exists only for unit tests: the certificate is self-signed,
+// is never deployed, and is removed with the test's temporary directory.
+func writeTestClientKeypair(t *testing.T, dir string) (certPath, keyPath string) {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("generating key: %v", err)
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: "unit-test-client"},
+		NotBefore:    time.Now().Add(-time.Minute),
+		NotAfter:     time.Now().Add(time.Hour),
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if err != nil {
+		t.Fatalf("creating certificate: %v", err)
+	}
+	keyDER, err := x509.MarshalECPrivateKey(key)
+	if err != nil {
+		t.Fatalf("marshalling key: %v", err)
+	}
+	certPath = filepath.Join(dir, "client.pem")
+	keyPath = filepath.Join(dir, "client.key")
+	if err := os.WriteFile(certPath, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0o600); err != nil {
+		t.Fatalf("writing cert file: %v", err)
+	}
+	if err := os.WriteFile(keyPath, pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER}), 0o600); err != nil {
+		t.Fatalf("writing key file: %v", err)
+	}
+	return certPath, keyPath
+}
+
+func TestBuildTLSConfig_ValidClientKeypair(t *testing.T) {
+	certPath, keyPath := writeTestClientKeypair(t, t.TempDir())
+	cfg := config.DefaultConfig()
+	cfg.TLSCertFile = certPath
+	cfg.TLSKeyFile = keyPath
+	p := &Publisher{config: cfg}
+
+	tlsConfig, err := p.buildTLSConfig()
+	if err != nil {
+		t.Fatalf("buildTLSConfig() error = %v", err)
+	}
+	if len(tlsConfig.Certificates) != 1 {
+		t.Fatalf("expected 1 client certificate, got %d", len(tlsConfig.Certificates))
+	}
+	if tlsConfig.InsecureSkipVerify {
+		t.Error("expected certificate verification to remain enabled")
 	}
 }
 

@@ -380,6 +380,25 @@ func tlsClientConfig(t *testing.T, caFile, certFile, keyFile string) *tls.Config
 	return cfg
 }
 
+// TestPublishTLS_RequiresClientCert verifies that a TLS-enabled broker configured
+// for mutual TLS rejects a connection that presents no client certificate. It is
+// skipped unless RABBITMQ_TLS_URL is set (see TestPublishTLS for the variables).
+func TestPublishTLS_RequiresClientCert(t *testing.T) {
+	url := os.Getenv("RABBITMQ_TLS_URL")
+	if url == "" {
+		t.Skip("RABBITMQ_TLS_URL not set; skipping TLS integration test")
+	}
+	caFile := os.Getenv("RABBITMQ_TLS_CA_FILE")
+
+	conn, err := amqplib.DialConfig(url, amqplib.Config{
+		TLSClientConfig: tlsClientConfig(t, caFile, "", ""),
+	})
+	if err == nil {
+		conn.Close() //nolint:errcheck
+		t.Fatal("expected dial without a client certificate to be rejected")
+	}
+}
+
 // TestPublishTLS verifies that records are published over AMQPS with server
 // certificate verification and, when configured, client certificate
 // authentication. It requires a TLS-enabled broker and is skipped unless
@@ -407,8 +426,9 @@ func TestPublishTLS(t *testing.T) {
 	cfg.TLSKeyFile = keyFile
 	cfg.Queue = queueName
 	cfg.RoutingKey = queueName
-	cfg.Durable = false
-	cfg.AutoDelete = true
+	// Durable so RabbitMQ 4.x accepts the declaration; the queue is removed below.
+	cfg.Durable = true
+	cfg.AutoDelete = false
 
 	pub, err := amqp.NewPublisher(cfg)
 	if err != nil {
@@ -439,6 +459,8 @@ func TestPublishTLS(t *testing.T) {
 		t.Fatalf("consumer channel: %v", err)
 	}
 	defer ch.Close() //nolint:errcheck
+	// Deferred after ch.Close, so it runs first, while the channel is still open.
+	defer ch.QueueDelete(queueName, false, false, false) //nolint:errcheck
 
 	msg, ok, err := ch.Get(queueName, true)
 	if err != nil {

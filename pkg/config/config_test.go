@@ -133,6 +133,49 @@ func lookupFrom(values map[string]string) func(string) string {
 	return func(key string) string { return values[key] }
 }
 
+func TestLoadFrom_TLSKeys(t *testing.T) {
+	cfg := DefaultConfig()
+	err := cfg.loadFrom(lookupFrom(map[string]string{
+		"tls":                      "true",
+		"tls_insecure_skip_verify": "true",
+		"tls_ca_file":              "/etc/fluent-bit/certs/ca.pem",
+		"tls_cert_file":            "/etc/fluent-bit/certs/client.pem",
+		"tls_key_file":             "/etc/fluent-bit/certs/client.key",
+	}))
+	if err != nil {
+		t.Fatalf("loadFrom() error = %v", err)
+	}
+
+	if !cfg.TLS {
+		t.Error("TLS = false, want true")
+	}
+	if !cfg.TLSInsecureSkipVerify {
+		t.Error("TLSInsecureSkipVerify = false, want true")
+	}
+	if cfg.TLSCAFile != "/etc/fluent-bit/certs/ca.pem" {
+		t.Errorf("TLSCAFile = %q", cfg.TLSCAFile)
+	}
+	if cfg.TLSCertFile != "/etc/fluent-bit/certs/client.pem" {
+		t.Errorf("TLSCertFile = %q", cfg.TLSCertFile)
+	}
+	if cfg.TLSKeyFile != "/etc/fluent-bit/certs/client.key" {
+		t.Errorf("TLSKeyFile = %q", cfg.TLSKeyFile)
+	}
+}
+
+func TestLoadFrom_TLSDefaults(t *testing.T) {
+	cfg := DefaultConfig()
+	if err := cfg.loadFrom(lookupFrom(map[string]string{})); err != nil {
+		t.Fatalf("loadFrom() error = %v", err)
+	}
+	if cfg.TLS || cfg.TLSInsecureSkipVerify {
+		t.Error("TLS options should default to disabled")
+	}
+	if cfg.TLSCAFile != "" || cfg.TLSCertFile != "" || cfg.TLSKeyFile != "" {
+		t.Error("TLS file paths should default to empty")
+	}
+}
+
 func TestLoadFrom_NewKeys(t *testing.T) {
 	cfg := DefaultConfig()
 	err := cfg.loadFrom(lookupFrom(map[string]string{
