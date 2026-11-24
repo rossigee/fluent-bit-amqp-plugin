@@ -34,3 +34,20 @@ func TestDestinationShowsDefaultExchange(t *testing.T) {
 		t.Fatalf("destination() = %q, want default exchange named", got)
 	}
 }
+
+func TestDecodeReasonNamesEachCode(t *testing.T) {
+	cases := map[int]string{
+		0:  "ok",
+		-1: "msgpack read failed or end of chunk",
+		-2: "top-level value is not a 2-element array",
+		-3: "record body is not a map",
+		-4: "metadata array shorter than 2",
+		-5: "timestamp has an unknown type",
+		-9: "unknown",
+	}
+	for code, want := range cases {
+		if got := decodeReason(code); got != want {
+			t.Errorf("decodeReason(%d) = %q, want %q", code, got, want)
+		}
+	}
+}
