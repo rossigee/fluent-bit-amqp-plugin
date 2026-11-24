@@ -5,6 +5,7 @@
 FROM alpine:3.21
 
 COPY out_amqp.so /out_amqp.so
+COPY in_amqp.so /in_amqp.so
 COPY build/init-container/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
