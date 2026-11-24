@@ -1,12 +1,12 @@
 module github.com/rossigee/fluent-bit-amqp-plugin
 
-go 1.27.1
+go 1.27.4
 
 require (
 	github.com/cloudevents/sdk-go/v2 v2.16.2
 	github.com/fluent/fluent-bit-go v0.0.0-20260909064720-9895046d00ce
 	github.com/google/uuid v1.6.0
-	github.com/rabbitmq/amqp091-go v1.15.0
+	github.com/rabbitmq/amqp091-go v1.17.0
 	go.uber.org/zap v1.28.0
 )
 

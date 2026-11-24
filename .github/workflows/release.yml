@@ -7,7 +7,7 @@ name: Release
       - 'v*'
 
 env:
-  GO_VERSION: '1.27.1'
+  GO_VERSION: '1.27.4'
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
   INIT_IMAGE_NAME: rossigee/fluent-bit-amqp-plugin-init
@@ -43,14 +43,14 @@ jobs:
       - name: Install dependencies
         run: make deps
 
-      - name: Install golangci-lint v2.14.0
+      - name: Install golangci-lint v2.15.0
         run: |
-          curl -sSfL https://github.com/golangci/golangci-lint/releases/download/v2.14.0/golangci-lint-2.14.0-linux-amd64.tar.gz | \
-          sudo tar -xz -C /usr/local/bin --strip-components=1 golangci-lint-2.14.0-linux-amd64/golangci-lint
+          curl -sSfL https://github.com/golangci/golangci-lint/releases/download/v2.15.0/golangci-lint-2.15.0-linux-amd64.tar.gz | \
+          sudo tar -xz -C /usr/local/bin --strip-components=1 golangci-lint-2.15.0-linux-amd64/golangci-lint
 
       - name: Install gosec
         run: |
-          curl -sSfL https://github.com/securego/gosec/releases/download/v2.29.0/gosec_2.29.0_linux_amd64.tar.gz | \
+          curl -sSfL https://github.com/securego/gosec/releases/download/v2.30.0/gosec_2.30.0_linux_amd64.tar.gz | \
           sudo tar -xz -C /usr/local/bin gosec
 
       - name: Validate code
