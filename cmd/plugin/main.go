@@ -47,6 +47,28 @@ func newPublisher(cfg *config.AMQPConfig) (publisher, error) {
 	return amqp.NewPublisher(cfg)
 }
 
+// decodeReason names a code returned by the Fluent Bit Go decoder's GetRecord.
+// -1 is both a msgpack read error and the normal end of a chunk, so it is named
+// as such rather than as a failure.
+func decodeReason(code int) string {
+	switch code {
+	case 0:
+		return "ok"
+	case -1:
+		return "msgpack read failed or end of chunk"
+	case -2:
+		return "top-level value is not a 2-element array"
+	case -3:
+		return "record body is not a map"
+	case -4:
+		return "metadata array shorter than 2"
+	case -5:
+		return "timestamp has an unknown type"
+	default:
+		return "unknown"
+	}
+}
+
 // destination describes where the plugin publishes, for log messages
 func destination(cfg *config.AMQPConfig) string {
 	if cfg.Backend == config.BackendMQTT {
@@ -153,11 +175,13 @@ func FLBPluginFlushCtx(ctx, data unsafe.Pointer, length C.int, tag *C.char) int 
 	count := 0
 	errors := 0
 	decoded := 0
+	stopCode := 0
 	tagStr := C.GoString(tag)
 
 	for {
 		ret, ts, record := output.GetRecord(dec)
 		if ret != 0 {
+			stopCode = ret
 			break
 		}
 		decoded++
@@ -192,7 +216,8 @@ func FLBPluginFlushCtx(ctx, data unsafe.Pointer, length C.int, tag *C.char) int 
 	// A non-empty chunk that yields no records is otherwise reported as OK with no
 	// log line at all. Name it so a silent drop is visible.
 	if decoded == 0 && length > 0 {
-		logger.Warnw("Flush chunk contained no decodable records", "tag", tagStr, "bytes", int(length))
+		logger.Warnw("Flush chunk contained no decodable records", "tag", tagStr, "bytes", int(length),
+			"decode_code", stopCode, "decode_reason", decodeReason(stopCode))
 	}
 	logger.Debugw("Published records", "count", count, "errors", errors)
 
